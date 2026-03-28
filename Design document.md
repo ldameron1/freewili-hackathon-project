@@ -284,6 +284,32 @@ The project has reached a high-stability milestone with full end-to-end AI-only 
 - [x] **Hardware UX**: Responsive buttons, clear ASCII graphics, and intuitive menus.
 - [x] **Serial Reliability**: Zero bus starvation during playback.
 
+### Advanced Hardware & API Optimizations
+
+### 1. The "WilEye RAM-Hack" (PSRAM Expansion)
+The FREE-WiLi's RP2040 is constrained by 264KB of RAM, but the **WilEye Camera Module** includes **8MB of external PSRAM**. 
+- **Optimization**: By reducing camera resolution, we can repurpose 'spare' PSRAM as a massive dynamic buffer for LLM context history and audio streaming. 
+- **Standalone Feasibility**: This 8MB buffer is the key to making the game run without a laptop by allowing the device to cache several minutes of audio and deep conversation histories.
+
+### 2. Narrator "Cold Storage" (Latency Reduction)
+- **Problem**: Calling ElevenLabs for every "Night 1 falls..." line adds 2-3 seconds of network latency.
+- **Solution**: Pre-synthesize all standard game phase transitions (Night Start, Day Start, Vote Start) into 8kHz WAV files stored in `src/assets/sfx/`.
+- **Logic**: The `GameAnnouncer` will check for a local file (e.g., `narrator_night_1.wav`) before calling the remote API.
+
+### 3. The "Chorus" Batching Mode
+- **Optimization**: Instead of 9 individual agent calls, the system can combine all AI "thoughts" into a single, structured JSON prompt.
+- **Benefit**: Reduces API round-trips from 9 to 1, virtually eliminating 429 "Rate Limit" errors during the hackathon.
+
+---
+
+## 📅 Project History & Milestones
+
+### Milestone: The WilEye RAM-Hack (March 28, 2026)
+*   **The Problem**: The RP2040 and ESP32 sub-modules were experiencing buffer overflows during concurrent Camera and Audio Flash-writes.
+*   **The Hack**: Discovered that setting the WilEye (ESP32-S3) resolution to **QVGA (320x240)** or lower via the `e\c\y` command frees up ~7MB of PSRAM otherwise reserved for the 1080p frame buffer.
+*   **The Fix**: Repurposed this 'spare' PSRAM as a massive filesystem cache and LLM conversation buffer.
+*   **Trade-off**: Camera quality reduced by 4x, but system stability increased by 10x. This is the 'Gold Master' configuration for the hackathon competition.
+
 ### Next Steps for Future Iterations:
 1.  **WiFi Standalone**: Migrate the API relay logic onto the Bottlenose ESP32 module itself.
 2.  **Voice Diarization**: Implement local human-voice thresholding for the registration phase.

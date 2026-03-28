@@ -155,19 +155,33 @@ class GameAnnouncer:
     def announce_phase(self, phase: str, turn: int):
         if phase == "night":
             self.play_sfx("night_bell")
-            self.speak(f"Night {turn} falls on the town. Everyone, close your eyes.")
+            # Try cold storage for Night 1
+            if turn == 1 and os.path.exists(os.path.join(self.sfx_dir, "narrator_night_1.wav")):
+                self.play_sfx("narrator_night_1")
+            else:
+                self.speak(f"Night {turn} falls on the town. Everyone, close your eyes.")
         elif phase == "day_discussion":
             self.play_sfx("morning_bell")
-            self.speak(f"Day {turn} breaks. The town awakens. You may now discuss.")
+            # Try cold storage for Day 1
+            if turn == 1 and os.path.exists(os.path.join(self.sfx_dir, "narrator_day_1.wav")):
+                self.play_sfx("narrator_day_1")
+            else:
+                self.speak(f"Day {turn} breaks. The town awakens. You may now discuss.")
         elif phase == "day_vote":
-            self.speak("Discussion time is over. It is time to vote.")
+            if os.path.exists(os.path.join(self.sfx_dir, "narrator_vote_start.wav")):
+                self.play_sfx("narrator_vote_start")
+            else:
+                self.speak("Discussion time is over. It is time to vote.")
             
     def announce_death(self, player_name: str, role: str):
         self.play_sfx("gunshot")
         self.speak(f"Tragedy has struck. {player_name} was found dead this morning. They were a {role}.")
         
     def announce_no_death(self):
-        self.speak("A miracle! No one died in the night.")
+        if os.path.exists(os.path.join(self.sfx_dir, "narrator_miracle.wav")):
+            self.play_sfx("narrator_miracle")
+        else:
+            self.speak("A miracle! No one died in the night.")
         
     def announce_eliminated(self, player_name: str, role: str):
         self.speak(f"The town has spoken. {player_name} is eliminated. They were a {role}.")
