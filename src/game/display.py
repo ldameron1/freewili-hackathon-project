@@ -33,7 +33,7 @@ def render_main_display(fw: FreeWili, state: GameState, message: str = "") -> No
     while len(lines) < 12:
         lines.append("")
 
-    text = "\n".join(lines)
+    text = "\\n".join(lines)
     # Ensure ASCII only
     text = text.encode('ascii', 'replace').decode('ascii')
     fw.show_text_display(text, FreeWiliProcessorType.Display)
@@ -51,7 +51,7 @@ def render_selection_screen(fw: FreeWili, title: str, items: list[str], selected
         
     lines.append("")
     lines.append("[W]Up [Y]Down [G]Select")
-    text = "\n".join(lines)
+    text = "\\n".join(lines)
     text = text.encode('ascii', 'replace').decode('ascii')
     fw.show_text_display(text, FreeWiliProcessorType.Display)
 

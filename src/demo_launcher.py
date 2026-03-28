@@ -56,7 +56,7 @@ def render_menu(fw: FreeWili, items: list, selected: int, title: str = "MAFIA LA
         lines.append(f"{prefix} {item}")
     lines.append("")
     lines.append("[Y]Up [W]Down [G]Select")
-    text = "\n".join(lines)
+    text = "\\n".join(lines)
     fw.show_text_display(text, FreeWiliProcessorType.Display)
 
 
@@ -88,11 +88,11 @@ def play_navigate_tone(fw: FreeWili) -> None:
 def demo_role_leds(fw: FreeWili) -> None:
     """Cycle through role colors on LEDs."""
     log("LED Role Demo: cycling through roles...")
-    fw.show_text_display("LED ROLE DEMO\n\nWatch the LEDs\ncycle through\nMafia roles...", FreeWiliProcessorType.Display)
+    fw.show_text_display("LED ROLE DEMO\\n\\nWatch the LEDs\\ncycle through\\nMafia roles...", FreeWiliProcessorType.Display)
 
     for role, (r, g, b) in ROLE_COLORS.items():
         log(f"  {role}: RGB({r},{g},{b})")
-        fw.show_text_display(f"LED ROLE DEMO\n\nRole: {role}\nRGB({r},{g},{b})", FreeWiliProcessorType.Display)
+        fw.show_text_display(f"LED ROLE DEMO\\n\\nRole: {role}\\nRGB({r},{g},{b})", FreeWiliProcessorType.Display)
         set_role_leds(fw, role)
         fw.play_audio_tone(440 + list(ROLE_COLORS.keys()).index(role) * 110, 0.2, 0.3)
         time.sleep(1.5)
@@ -104,7 +104,7 @@ def demo_role_leds(fw: FreeWili) -> None:
 def demo_audio(fw: FreeWili) -> None:
     """Play a sequence of tones."""
     log("Audio Demo: playing tone sequence...")
-    fw.show_text_display("AUDIO DEMO\n\nPlaying tones...\n\n440 > 550 > 660 > 880 Hz", FreeWiliProcessorType.Display)
+    fw.show_text_display("AUDIO DEMO\\n\\nPlaying tones...\\n\\n440 > 550 > 660 > 880 Hz", FreeWiliProcessorType.Display)
 
     for hz in [440, 550, 660, 880]:
         log(f"  Playing {hz}Hz...")
@@ -117,22 +117,22 @@ def demo_audio(fw: FreeWili) -> None:
 def demo_camera(fw: FreeWili) -> None:
     """Attempt to capture a photo with WilEye camera."""
     log("Camera Test: attempting photo capture...")
-    fw.show_text_display("CAMERA TEST\n\nCapturing photo\nvia WilEye Orca...", FreeWiliProcessorType.Display)
+    fw.show_text_display("CAMERA TEST\\n\\nCapturing photo\\nvia WilEye Orca...", FreeWiliProcessorType.Display)
 
     try:
         result = fw.wileye_take_picture(0, "demo_photo.jpg")
         if result.is_ok():
-            msg = "Photo captured!\nSaved: demo_photo.jpg"
+            msg = "Photo captured!\\nSaved: demo_photo.jpg"
             log(f"  Camera: photo captured!")
         else:
             err = result.unwrap_err()
-            msg = f"Camera failed:\n{err}\n\nCamera may need\nre-initialization."
+            msg = f"Camera failed:\\n{err}\\n\\nCamera may need\\nre-initialization."
             log(f"  Camera failed: {err}")
     except Exception as e:
-        msg = f"Camera error:\n{str(e)[:60]}"
+        msg = f"Camera error:\\n{str(e)[:60]}"
         log(f"  Camera error: {e}")
 
-    fw.show_text_display(f"CAMERA TEST\n\n{msg}", FreeWiliProcessorType.Display)
+    fw.show_text_display(f"CAMERA TEST\\n\\n{msg}", FreeWiliProcessorType.Display)
     time.sleep(2)
 
 
@@ -141,9 +141,9 @@ def demo_device_info(fw: FreeWili) -> None:
     log("Device Info...")
     try:
         app_info = fw.get_app_info().expect("Failed")
-        info_text = f"DEVICE INFO\n\n{app_info}\nFW: MainCPU v91.3"
+        info_text = f"DEVICE INFO\\n\\n{app_info}\\nFW: MainCPU v91.3"
     except Exception:
-        info_text = "DEVICE INFO\n\nCould not read."
+        info_text = "DEVICE INFO\\n\\nCould not read."
 
     fw.show_text_display(info_text, FreeWiliProcessorType.Display)
     time.sleep(2)
@@ -153,11 +153,11 @@ def demo_ai_mode_placeholder(fw: FreeWili, mode_name: str) -> None:
     """Placeholder for game modes."""
     log(f"Mode: {mode_name} (not yet implemented)")
     fw.show_text_display(
-        f"{mode_name}\n\n"
-        "This mode will run\n"
-        "a full Mafia game\n"
-        "with AI agents.\n\n"
-        "Coming soon...\n\n"
+        f"{mode_name}\\n\\n"
+        "This mode will run\\n"
+        "a full Mafia game\\n"
+        "with AI agents.\\n\\n"
+        "Coming soon...\\n\\n"
         "[Red] Back",
         FreeWiliProcessorType.Display
     )
@@ -254,7 +254,7 @@ def main() -> None:
                         elif name == "Red":
                             # Exit
                             log("  ✕ Exit requested")
-                            fw.show_text_display("Goodbye!\n\n** Mafia Game **\n   Launcher\n\n  See you soon!", FreeWiliProcessorType.Display)
+                            fw.show_text_display("Goodbye!\\n\\n** Mafia Game **\\n   Launcher\\n\\n  See you soon!", FreeWiliProcessorType.Display)
                             fw.play_audio_tone(880, 0.15, 0.3)
                             time.sleep(0.2)
                             fw.play_audio_tone(660, 0.15, 0.3)

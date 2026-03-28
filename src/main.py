@@ -54,7 +54,7 @@ def build_ai_players() -> list[Player]:
 
 def handle_wifi_setup(fw: FreeWili):
     """Prompt for WiFi credentials on host and send to device."""
-    fw.show_text_display("WIFI SETUP\n\nCheck your laptop\nterminal for prompts.", FreeWiliProcessorType.Display)
+    fw.show_text_display("WIFI SETUP\\n\\nCheck your laptop\\nterminal for prompts.", FreeWiliProcessorType.Display)
     print("\n--- FREE-WiLi WiFi Setup ---")
     ssid = input("Enter SSID: ")
     password = input("Enter Password: ")
@@ -69,10 +69,10 @@ def handle_wifi_setup(fw: FreeWili):
             fw.main_serial.serial_port.send(cmd)
         else:
             # Fallback if library wrapper is used
-            fw.show_text_display("WIFI SETUP\n\nError: Serial port\nnot accessible.", FreeWiliProcessorType.Display)
+            fw.show_text_display("WIFI SETUP\\n\\nError: Serial port\\nnot accessible.", FreeWiliProcessorType.Display)
             return
 
-        fw.show_text_display(f"WIFI SETUP\n\nConnecting to:\n{ssid}...\n\n(Wait for LED confirm)", FreeWiliProcessorType.Display)
+        fw.show_text_display(f"WIFI SETUP\\n\\nConnecting to:\\n{ssid}...\\n\\n(Wait for LED confirm)", FreeWiliProcessorType.Display)
         time.sleep(5)
         print("WiFi command sent. Check device for connection status.")
     except Exception as e:
@@ -80,7 +80,7 @@ def handle_wifi_setup(fw: FreeWili):
 
 def handle_camera_test(fw: FreeWili):
     """Capture a test photo via WilEye Orca."""
-    fw.show_text_display("CAMERA TEST\n\nCapturing photo...", FreeWiliProcessorType.Display)
+    fw.show_text_display("CAMERA TEST\\n\\nCapturing photo...", FreeWiliProcessorType.Display)
     print("Testing WilEye Camera...")
     
     # Dest 0 = SD, 1 = Main FS, 2 = Display FS
@@ -89,16 +89,16 @@ def handle_camera_test(fw: FreeWili):
         # Some versions of the library might need fw.wileye_take_picture or fw.main_serial.wileye_take_picture
         res = fw.wileye_take_picture(0, filename)
         if res.is_ok():
-            msg = f"SUCCESS!\nCaptured: {filename}"
+            msg = f"SUCCESS!\\nCaptured: {filename}"
             print(f"Camera Success: {res.unwrap()}")
         else:
-            msg = f"FAILED\n{res.unwrap_err()}"
+            msg = f"FAILED\\n{res.unwrap_err()}"
             print(f"Camera Failed: {res.unwrap_err()}")
     except Exception as e:
-        msg = f"ERROR\n{str(e)[:40]}"
+        msg = f"ERROR\\n{str(e)[:40]}"
         print(f"Camera Error: {e}")
         
-    fw.show_text_display(f"CAMERA TEST\n\n{msg}", FreeWiliProcessorType.Display)
+    fw.show_text_display(f"CAMERA TEST\\n\\n{msg}", FreeWiliProcessorType.Display)
     time.sleep(3)
 
 def wait_for_menu_selection(fw: FreeWili) -> int:
