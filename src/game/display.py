@@ -28,6 +28,10 @@ def render_main_display(fw: FreeWili, state: GameState, message: str = "") -> No
     if message:
         lines.append("")
         lines.append(">> " + message[:50])
+        
+    # Pad to clear screen and avoid trailing black bars from old renders
+    while len(lines) < 12:
+        lines.append("")
 
     text = "\n".join(lines)
     # Ensure ASCII only

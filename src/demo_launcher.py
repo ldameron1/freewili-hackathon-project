@@ -39,6 +39,7 @@ MAIN_MENU = [
     "[4] LED Role Demo",
     "[5] Audio Test",
     "[6] Device Info",
+    "[7] WiFi Setup / Test",
 ]
 
 
@@ -199,7 +200,7 @@ def main() -> None:
         fw.play_audio_tone(880, 0.3, 0.4)
 
         log("Menu displayed. Listening for buttons...")
-        log("  (Yellow=Up, White=Down, Green=Select, Red=Exit)")
+        log("  (White=Up, Yellow=Down, Green=Select, Red=Exit)")
         log("  Press Ctrl+C on host to exit")
 
         last_buttons = fw.read_all_buttons().expect("Failed to read buttons")
@@ -213,14 +214,14 @@ def main() -> None:
                     if state and not last_buttons.get(color, False):
                         name = color.name
 
-                        if name == "Yellow":
+                        if name == "White":
                             # Navigate up
                             selected = (selected - 1) % len(MAIN_MENU)
                             play_navigate_tone(fw)
                             render_menu(fw, MAIN_MENU, selected)
                             log(f"  ▲ Selected: {MAIN_MENU[selected]}")
 
-                        elif name == "White":
+                        elif name == "Yellow":
                             # Navigate down
                             selected = (selected + 1) % len(MAIN_MENU)
                             play_navigate_tone(fw)
@@ -244,6 +245,8 @@ def main() -> None:
                                 demo_audio(fw)
                             elif selected == 5:  # Device Info
                                 demo_device_info(fw)
+                            elif selected == 6:  # WiFi Setup
+                                demo_ai_mode_placeholder(fw, "WIFI SETUP / TEST")
 
                             # Return to menu
                             render_menu(fw, MAIN_MENU, selected)

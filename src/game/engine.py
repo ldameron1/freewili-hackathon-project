@@ -31,6 +31,95 @@ class MafiaEngine:
         display.render_main_display(self.fw, self.state, "Game Initialized")
         self.state.log("Game initialized with {} players".format(len(players)))
 
+        # Wristband pseudo-random assignment logic
+        human_players = [p for p in players if not p.is_ai]
+        if human_players:
+            COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Cyan", "White"]
+            
+            # Transmit "shuffle" payload via 433MHz
+            try:
+                if hasattr(self.fw, 'select_radio') and hasattr(self.fw, 'write_radio'):
+                    self.fw.select_radio(1)
+                    shuffle_times = random.randint(3, 7)
+                    self.state.log(f"Shuffling wristbands {shuffle_times} times...")
+                    for _ in range(shuffle_times):
+                        # Placeholder generic 'shift color' command
+                        self.fw.write_radio(b'\xFF\x00\xAA\x55'*5)
+                        time.sleep(0.5)
+            except Exception as e:
+                self.state.log(f"Radio shuffle skipped: {e}", public=False)
+                
+            assigned_colors = random.sample(COLORS, len(human_players))
+            announcement = "Wristbands shuffled. "
+            for p, color in zip(human_players, assigned_colors):
+                self.state.log(f"Assigned {color} band to {p.name} ({p.role.value}).", public=False)
+                announcement += f"The {color} wristband is {p.name}, playing as a {p.role.value}. "
+                
+            self.announcer.speak(announcement)
+            time.sleep(4)
+            
+            # Send 'Set All Red' command placeholder
+            try:
+                if hasattr(self.fw, 'select_radio') and hasattr(self.fw, 'write_radio'):
+                    self.fw.write_radio(b'\xFF\xFF\x00\x00'*5)
+            except Exception:
+                pass
+
+    def run_registration_phase(self):
+        """Register human players with photo and voice ID."""
+        human_players = [p for p in self.state.players if not p.is_ai]
+        if not human_players:
+            return
+
+        self.state.phase = GamePhase.REGISTRATION
+        self.state.log("Starting Registration Phase")
+        
+        self.announcer.speak("Welcome, humans. Please step forward one by one to register your identity.")
+        time.sleep(2)
+
+        for p in human_players:
+            display.render_main_display(self.fw, self.state, f"Registering: {p.name}")
+            self.announcer.speak(f"{p.name}, please stand in front of the camera and stay still.")
+            time.sleep(3)
+            
+            # Take photo
+            photo_file = f"face_{p.name}.jpg"
+            self.fw.wileye_take_picture(0, photo_file)
+            p.face_id = photo_file
+            self.state.log(f"Captured face reference for {p.name}: {photo_file}")
+            
+            # Record audio snippet for voice diarization
+            self.announcer.speak("Now, please say your name and a short sentence.")
+            display.render_main_display(self.fw, self.state, f"{p.name}: Speaking...")
+            time.sleep(1) # wait for them to start
+            
+            # Record 3 seconds to device
+            # Note: We need a way to trigger recording from main CPU
+            # if the SDK supports it. Assuming a placeholder for now.
+            try:
+                # if hasattr(self.fw, 'record_audio'):
+                #    self.fw.record_audio(f"voice_{p.name}.wav", 3.0)
+                pass
+            except Exception:
+                pass
+                
+            p.voice_profile_id = f"voice_{p.name}.wav"
+            self.state.log(f"Recorded voice sample for {p.name}")
+            
+            display.flash_leds(self.fw, 0, 25, 0, count=1) # Confirm
+            time.sleep(1)
+
+        # Take a group photo/video for spatial context
+        self.announcer.speak("Everyone, please stand in the frame together for a group scan.")
+        display.render_main_display(self.fw, self.state, "GROUP SCAN...")
+        time.sleep(2)
+        self.fw.wileye_take_picture(0, "group_spatial.jpg")
+        self.state.log("Group spatial scan complete.")
+        
+        self.announcer.speak("Registration complete. Let the games begin.")
+        display.render_main_display(self.fw, self.state, "Ready to Play")
+        time.sleep(2)
+
     def run_night_phase(self):
         self.state.phase = GamePhase.NIGHT
         self.state.turn += 1

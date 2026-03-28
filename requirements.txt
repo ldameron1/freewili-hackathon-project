@@ -1,0 +1,5 @@
+freewili
+google-genai
+elevenlabs
+Flask
+pydantic

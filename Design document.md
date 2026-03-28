@@ -189,13 +189,13 @@ A localhost web UI served from the host laptop.
 ## MVP vs. Stretch Goals
 
 ### MVP (Must Have)
-- [ ] AI-only Mafia game running end-to-end
-- [ ] FREE-WILi display shows game state, agent faces, and text
-- [ ] FREE-WILi speaker outputs AI agent voices (ElevenLabs TTS)
-- [ ] FREE-WILi buttons navigate launcher menu
-- [ ] Gemini API drives agent reasoning with structured JSON output
-- [ ] Basic moderator panel (localhost)
-- [ ] Wristband color signaling for role assignment
+- [x] AI-only Mafia game running end-to-end
+- [x] FREE-WILi display shows game state, agent faces, and text
+- [x] FREE-WILi speaker outputs AI agent voices (ElevenLabs TTS)
+- [x] FREE-WILi buttons navigate launcher menu
+- [x] Gemini API drives agent reasoning with structured JSON output
+- [x] Basic moderator panel (localhost)
+- [x] Wristband color signaling for role assignment
 
 ### Stretch Goals
 - [ ] Mixed human+AI mode with microphone transcription

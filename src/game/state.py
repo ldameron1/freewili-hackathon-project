@@ -8,6 +8,7 @@ import time
 
 class GamePhase(Enum):
     LOBBY = "lobby"
+    REGISTRATION = "registration"
     NIGHT = "night"
     DAY_DISCUSSION = "day_discussion"
     DAY_VOTE = "day_vote"
@@ -60,6 +61,8 @@ class Player:
     alive: bool = True
     voice_id: str = ""
     personality: str = ""
+    face_id: str = ""  # Filename of their reference photo
+    voice_profile_id: str = ""  # ElevenLabs or Gemini speaker reference
 
     @property
     def role_label(self) -> str:

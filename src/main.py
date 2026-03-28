@@ -25,44 +25,95 @@ def start_flask(engine: MafiaEngine):
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 def build_ai_players() -> list[Player]:
-    # 9 player game: 7 Town, 2 Mafia
+    # 9 player game: 7 Town, 2 Mafia (1 Human, 8 AI)
     roles = [
         Role.MAFIA, Role.MAFIA,
         Role.DOCTOR, Role.DETECTIVE,
         Role.TOWN, Role.TOWN, Role.TOWN, Role.TOWN, Role.TOWN
     ]
-    names = ["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"]
+    # "User" is the human player
+    names = ["User", "Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi"]
     personalities = [
-        "Analytical and cautious", "Boisterous and friendly", "Nervous and defensive",
-        "Quiet but observant", "Aggressive and accusatory", "Sarcastic and witty",
-        "Helpful and naive", "Overthinking everything", "Calm and cold"
+        "The human participant", "Analytical and cautious", "Boisterous and friendly",
+        "Nervous and defensive", "Quiet but observant", "Aggressive and accusatory",
+        "Sarcastic and witty", "Helpful and naive", "Overthinking everything"
     ]
     
     players = []
     for i in range(9):
+        is_human = (names[i] == "User")
         players.append(Player(
             name=names[i],
             role=roles[i],
-            is_ai=True,
+            is_ai=not is_human,
             voice_id=DEFAULT_VOICES[i % len(DEFAULT_VOICES)],
             personality=personalities[i]
         ))
     return players
 
 
+def handle_wifi_setup(fw: FreeWili):
+    """Prompt for WiFi credentials on host and send to device."""
+    fw.show_text_display("WIFI SETUP\n\nCheck your laptop\nterminal for prompts.", FreeWiliProcessorType.Display)
+    print("\n--- FREE-WiLi WiFi Setup ---")
+    ssid = input("Enter SSID: ")
+    password = input("Enter Password: ")
+    
+    # The 'e\w' command is used to connect via the main serial bridge
+    # We use main_serial directly if available, or fw.send
+    cmd = f"e\\w {ssid} {password}"
+    print(f"Sending command: {cmd}")
+    
+    try:
+        if hasattr(fw, 'main_serial') and fw.main_serial:
+            fw.main_serial.serial_port.send(cmd)
+        else:
+            # Fallback if library wrapper is used
+            fw.show_text_display("WIFI SETUP\n\nError: Serial port\nnot accessible.", FreeWiliProcessorType.Display)
+            return
+
+        fw.show_text_display(f"WIFI SETUP\n\nConnecting to:\n{ssid}...\n\n(Wait for LED confirm)", FreeWiliProcessorType.Display)
+        time.sleep(5)
+        print("WiFi command sent. Check device for connection status.")
+    except Exception as e:
+        print(f"WiFi Setup Error: {e}")
+
+def handle_camera_test(fw: FreeWili):
+    """Capture a test photo via WilEye Orca."""
+    fw.show_text_display("CAMERA TEST\n\nCapturing photo...", FreeWiliProcessorType.Display)
+    print("Testing WilEye Camera...")
+    
+    # Dest 0 = SD, 1 = Main FS, 2 = Display FS
+    filename = "startup_test.jpg"
+    try:
+        # Some versions of the library might need fw.wileye_take_picture or fw.main_serial.wileye_take_picture
+        res = fw.wileye_take_picture(0, filename)
+        if res.is_ok():
+            msg = f"SUCCESS!\nCaptured: {filename}"
+            print(f"Camera Success: {res.unwrap()}")
+        else:
+            msg = f"FAILED\n{res.unwrap_err()}"
+            print(f"Camera Failed: {res.unwrap_err()}")
+    except Exception as e:
+        msg = f"ERROR\n{str(e)[:40]}"
+        print(f"Camera Error: {e}")
+        
+    fw.show_text_display(f"CAMERA TEST\n\n{msg}", FreeWiliProcessorType.Display)
+    time.sleep(3)
+
 def wait_for_menu_selection(fw: FreeWili) -> int:
     """Uses White=Up, Yellow=Down, Green=Select."""
     items = [
-        "Mafia", 
-        "[Coming soon]"
+        "Start Mafia Game", 
+        "WiFi Setup (Bottlenose)",
+        "Camera Test (WilEye)",
+        "Exit"
     ]
     selected = 0
     display.render_selection_screen(fw, "MAFIA MENU", items, selected)
     
     last_buttons = fw.read_all_buttons().expect("Failed to read buttons")
     
-    # Yellow=Up/Down reversed in UI rendering usually, but to match exactly the prompt: "White will be up, yellow will be down"
-    # Wait for user input
     while True:
         buttons = fw.read_all_buttons().expect("Failed to read buttons")
         
@@ -106,11 +157,16 @@ def main():
 
     try:
         if not args.skip_menu:
-            selection = wait_for_menu_selection(fw)
-            if selection != 0:
-                display.render_main_display(fw, None, "Mixed mode not yet implemented.\nPress Ctrl+C to abort.")
-                time.sleep(3)
-                return
+            while True:
+                selection = wait_for_menu_selection(fw)
+                if selection == 0: # Start Game
+                    break
+                elif selection == 1: # WiFi
+                    handle_wifi_setup(fw)
+                elif selection == 2: # Camera
+                    handle_camera_test(fw)
+                elif selection == 3: # Exit
+                    return
 
         print("\nStarting Game Engine...")
         engine = MafiaEngine(fw)
@@ -122,6 +178,7 @@ def main():
         
         # Run game
         engine.setup_game(players)
+        engine.run_registration_phase()
         engine.run_game_loop()
 
     except KeyboardInterrupt:

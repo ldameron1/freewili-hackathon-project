@@ -25,23 +25,27 @@ class GameAnnouncer:
             
         print(f"[TTS] Streaming voice {voice_id}: '{text}'")
         try:
+            import wave
             audio_generator = self.client.text_to_speech.convert(
                 text=text,
                 voice_id=voice_id,
                 model_id="eleven_multilingual_v2",
-                output_format="mp3_44100_128"
+                output_format="pcm_16000"
             )
             # Gather bytes
             audio_bytes = b"".join(audio_generator)
             
-            # Save to tmp
-            tmp_path = "/tmp/tts.mp3"
-            with open(tmp_path, "wb") as f:
-                f.write(audio_bytes)
+            # Save to tmp as WAV
+            tmp_path = "/tmp/tts.wav"
+            with wave.open(tmp_path, "wb") as f:
+                f.setnchannels(1)
+                f.setsampwidth(2) # 16-bit
+                f.setframerate(16000)
+                f.writeframes(audio_bytes)
                 
             # Upload to FREE-WILi and play natively
-            self.fw.send_file(tmp_path, "tts.mp3", FreeWiliProcessorType.Main).expect("Failed to upload TTS")
-            self.fw.play_audio_file("tts.mp3").expect("Failed to play TTS file")
+            self.fw.send_file(tmp_path, "tts.wav", processor=FreeWiliProcessorType.Display).expect("Failed to upload TTS")
+            self.fw.play_audio_file("tts.wav", processor=FreeWiliProcessorType.Display).expect("Failed to play TTS file")
             
         except Exception as e:
             print(f"[TTS Error] {e}")

@@ -3,67 +3,42 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, Literal
 
-import google.generativeai as genai
-from google.generativeai import types as gtypes
+from pydantic import BaseModel, Field
+from google import genai
+from google.genai import types
 
 if TYPE_CHECKING:
     from .state import GameState, Player, Role
 
-# JSON schema for agent output
-AGENT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "private_thought": {
-            "type": "string",
-            "description": "Your internal reasoning — only you and the moderator can see this.",
-        },
-        "public_statement": {
-            "type": "string",
-            "description": "What you say out loud. Keep it under 3 sentences.",
-        },
-        "action": {
-            "type": "object",
-            "properties": {
-                "type": {
-                    "type": "string",
-                    "enum": ["none", "vote", "accuse", "defend", "nominate", "kill", "save", "investigate"],
-                },
-                "target": {"type": "string", "description": "Name of the player targeted, or empty."},
-            },
-            "required": ["type", "target"],
-        },
-        "emotion": {
-            "type": "string",
-            "enum": ["calm", "nervous", "suspicious", "confident", "grieving", "angry", "amused"],
-        },
-    },
-    "required": ["private_thought", "public_statement", "action", "emotion"],
-}
+class AgentAction(BaseModel):
+    type: Literal["none", "vote", "accuse", "defend", "nominate", "kill", "save", "investigate"]
+    target: str = Field(description="Name of the player targeted, or empty.")
 
+class AgentResponse(BaseModel):
+    private_thought: str = Field(description="Your internal reasoning — only you and the moderator can see this.")
+    public_statement: str = Field(description="What you say out loud. Keep it under 3 sentences.")
+    action: AgentAction
+    emotion: Literal["calm", "nervous", "suspicious", "confident", "grieving", "angry", "amused"]
 
 MAFIA_SYSTEM = """You are {name}, playing Mafia. You are a member of the MAFIA.
 Your secret allies are: {allies}.
 Your personality: {personality}
 You MUST lie, deceive, and avoid suspicion. Never reveal you are Mafia.
-You know your role, your allies, and all private information from your own actions.
-Respond ONLY with valid JSON matching the schema."""
+You know your role, your allies, and all private information from your own actions."""
 
 TOWN_SYSTEM = """You are {name}, playing Mafia. You are a {role}.
 Your personality: {personality}
 {role_instructions}
-You do NOT know who the Mafia members are. Use logic and social observation.
-Respond ONLY with valid JSON matching the schema."""
+You do NOT know who the Mafia members are. Use logic and social observation."""
 
 ROLE_INSTRUCTIONS = {
     "Doctor": "Each night you protect one player. You cannot protect the same person two nights in a row. You may protect yourself.",
     "Detective": "Each night you investigate one player and learn if they are Mafia (yes) or not (no). Use this info carefully — revealing it makes you a target.",
     "Townsperson": "You have no special night ability. Win by deducing and eliminating Mafia through discussion and voting.",
 }
-
-
-import time
 
 class AIAgent:
     def __init__(self, player: "Player", mafia_allies: list[str] | None = None):
@@ -74,17 +49,20 @@ class AIAgent:
 
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY not set in environment")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash-latest",
-            generation_config=genai.GenerationConfig(
+            # We don't crash here so tests/dry runs can pass if mocked
+            pass
+            
+        self.client = genai.Client()
+        self._build_system_prompt()
+        self.chat = self.client.chats.create(
+            model="gemini-2.5-flash",
+            config=types.GenerateContentConfig(
+                system_instruction=self._system,
                 temperature=0.9,
                 response_mime_type="application/json",
-            ),
+                response_schema=AgentResponse,
+            )
         )
-        self._build_system_prompt()
-        self.chat = self.model.start_chat(history=[])
 
     def _build_system_prompt(self) -> str:
         role = self.player.role
@@ -104,22 +82,17 @@ class AIAgent:
         return self._system
 
     def _call(self, prompt: str) -> dict:
-        """Send a prompt and parse the JSON response."""
-        full_prompt = f"{self._system}\n\n{prompt}"
+        """Send a prompt and return the structured response as a dict."""
         try:
             time.sleep(4.5)  # Pace to 13 RPM to respect Free Tier quota
-            response = self.model.generate_content(full_prompt)
-            text = response.text.strip()
-            # Strip markdown code fences if present
-            text = re.sub(r"^```(?:json)?\s*", "", text)
-            text = re.sub(r"\s*```$", "", text)
-            result = json.loads(text)
-            # Validate required keys
-            for key in ["private_thought", "public_statement", "action", "emotion"]:
-                if key not in result:
-                    result[key] = ""
-            if "action" not in result or not isinstance(result["action"], dict):
-                result["action"] = {"type": "none", "target": ""}
+            response = self.chat.send_message(prompt)
+            # Response should be valid JSON matching AgentResponse schema
+            result = json.loads(response.text)
+            
+            # Ensure safe fallback structure if parsing somehow fails
+            if not isinstance(result, dict):
+                raise ValueError("Model did not return a JSON object")
+                
             return result
         except Exception as e:
             print(f"[AGENT:{self.player.name}] Error: {e}")
@@ -144,7 +117,7 @@ class AIAgent:
             return {"private_thought": "It is night. I wait.", "public_statement": "", "action": {"type": "none", "target": ""}, "emotion": "calm"}
 
         result = self._call(prompt)
-        if role.value == "Doctor" and result["action"].get("target"):
+        if role.value == "Doctor" and result.get("action", {}).get("target"):
             self.last_protected = result["action"]["target"]
         return result
 
