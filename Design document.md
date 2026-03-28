@@ -115,6 +115,17 @@ Each AI agent has:
 | **Unique voice** | Distinct ElevenLabs voice per agent |
 | **Game history** | Full conversational and action log |
 
+### AI Agent Personalities & Strategies
+
+Agents use their assigned personalities to dictate their tone, but their structural *strategy* is determined by their assigned role via specific Gemini system prompt instructions:
+
+| Role | Core Strategy |
+|------|---------------|
+| **Mafia** | **Blend In & Deflect**: Avoid acting like a leader to avoid a target on their back. Subtly agree with townies to build trust. If accused, demand logical reasoning and turn the spotlight onto a third party. Fake-claim a power role only if cornered. |
+| **Detective** | **Subtle Guidance**: Use night investigation knowledge to steer town suspicion without explicitly revealing their role (which invites assassination). Example: "I have a very bad feeling about [X]'s inconsistencies." |
+| **Doctor** | **Protect the Vocal**: Try to anticipate Mafia targets (usually the most vocal or helpful "Town" players). Avoid self-protection unless absolutely necessary to ensure the survival of town leaders. |
+| **Townsperson** | **The Truth-Seeker**: No special powers, so they must ask probing questions. Challenge players who bandwagon votes or change opinions rapidly. Look for logical inconsistencies rather than emotional outbursts. |
+
 **Structured output**: All Gemini responses use [JSON schema enforcement](https://ai.google.dev/gemini-api/docs/structured-output) to ensure parseable actions (vote, accuse, defend, etc.).
 
 ### Camera Integration (ESP32-P4-EYE on Orca Port)
@@ -139,6 +150,11 @@ During open discussion, the system must identify *which* human is speaking:
 | **Voice enrollment** | At game start, each human says their name → voice profile created for later matching | Stretch |
 
 > **Data flow**: FREE-WILi mic captures audio → sent to host via USB → host calls speech-to-text API → transcription + speaker ID returned to FREE-WILi → injected into all AI agents' game history context.
+
+## System Limitations & Notes
+
+- **FREE-WILi WiFi capability**: The FREE-WILi board (Black/Red versions) includes Sub-GHz and 2.4GHz radios (e.g., CC1101, CC1352P7) intended for protocol research (Zigbee, Thread), but *does not* have a standard built-in WiFi module for direct internet access. Therefore, the architecture relies on the Host Laptop acting as an API proxy over USB serial to reach the Gemini and ElevenLabs APIs.
+- Audio and Display latency depends on serial transfer speeds.
 
 ---
 
