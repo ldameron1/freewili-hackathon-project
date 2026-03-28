@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAFIA | MODERATOR COMMAND</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>MAFIA COMMAND <span id="phase-badge" class="phase-tag">LOBBY</span></h1>
+    </header>
+
+    <main class="grid">
+        <!-- Left Column: Game Logs -->
+        <section class="panel">
+            <h2>Activity Log</h2>
+            <div id="logs">
+                <div class="log-entry">Waiting for game start...</div>
+            </div>
+        </section>
+
+        <!-- Right Column: Player Roster & State -->
+        <aside>
+            <section class="panel">
+                <h2>Players</h2>
+                <div id="players" class="player-list">
+                    <!-- Players injected here -->
+                </div>
+            </section>
+
+            <section class="panel status-viz" style="margin-top: 20px;">
+                <h2>System State</h2>
+                <div id="stats-container">
+                    <pre id="state-raw">Initialized...</pre>
+                </div>
+            </section>
+        </aside>
+    </main>
+
+    <script>
+        let lastLogCount = 0;
+
+        async function updateDashboard() {
+            try {
+                const [stateRes, logsRes] = await Promise.all([
+                    fetch('/api/state'),
+                    fetch('/api/logs')
+                ]);
+
+                const state = await stateRes.json();
+                const logs = await logsRes.json();
+
+                // Update Phase Header
+                const phaseBadge = document.getElementById('phase-badge');
+                phaseBadge.innerText = state.phase.toUpperCase() + (state.turn > 0 ? ` (DAY ${state.turn})` : '');
+                
+                // Update Player List
+                const playersDiv = document.getElementById('players');
+                playersDiv.innerHTML = state.players.map(p => `
+                    <div class="player ${p.alive ? '' : 'dead'}">
+                        <div class="player-name">
+                            <span class="avatar">${p.is_ai ? '🤖' : '👤'}</span>
+                            ${p.name}
+                        </div>
+                        <div class="player-role">${p.role}</div>
+                    </div>
+                `).join('');
+
+                // Update Raw State
+                document.getElementById('state-raw').innerText = JSON.stringify(state.votes || {}, null, 2);
+
+                // Update Logs
+                if (logs.length !== lastLogCount) {
+                    const logsDiv = document.getElementById('logs');
+                    logsDiv.innerHTML = logs.reverse().map(l => `
+                        <div class="log-entry ${l.public ? 'log-public' : 'log-private'}">
+                            <span class="log-phase">${l.phase.toUpperCase()}</span>
+                            ${l.message}
+                        </div>
+                    `).join('');
+                    lastLogCount = logs.length;
+                    
+                    // Simple auto-scroll to top (since we reversed records for 'latest first' feel)
+                    logsDiv.scrollTop = 0;
+                }
+
+            } catch (err) {
+                console.error("Dashboard Sync Error:", err);
+            }
+        }
+
+        // Poll every 1.5 seconds for hardware responsiveness
+        setInterval(updateDashboard, 1500);
+        updateDashboard();
+    </script>
+</body>
+</html>

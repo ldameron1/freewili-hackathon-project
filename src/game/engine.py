@@ -1,6 +1,7 @@
 """Main game engine orchestrating state, agents, announcer, and display."""
 import time
 import random
+import os
 
 from freewili import FreeWili
 from .state import GameState, Player, Role, GamePhase
@@ -43,8 +44,11 @@ class MafiaEngine:
                     shuffle_times = random.randint(3, 7)
                     self.state.log(f"Shuffling wristbands {shuffle_times} times...")
                     for _ in range(shuffle_times):
-                        # Placeholder generic 'shift color' command
-                        self.fw.write_radio(b'\xFF\x00\xAA\x55'*5)
+                        # Robust shuffle packet: preamble + length + command (0x53 = 'S') + random bytes + checksum
+                        packet = b"\xAA\xAA\xAA\xAA\x05\x53" + os.urandom(4)
+                        checksum = sum(packet) & 0xFF
+                        packet += bytes([checksum])
+                        self.fw.write_radio(packet)
                         time.sleep(0.5)
             except Exception as e:
                 self.state.log(f"Radio shuffle skipped: {e}", public=False)
@@ -128,42 +132,68 @@ class MafiaEngine:
         
         display.render_main_display(self.fw, self.state, "Night falls...")
         self.announcer.announce_phase("night", self.state.turn)
-        
-        # Build context for agents
-        context = f"Night {self.state.turn}. Alive players: {', '.join(p.name for p in self.state.living_players())}"
+        time.sleep(1)
         
         mafia_votes = {}
-        target = None
+        context = f"Night {self.state.turn}. Alive players: {', '.join(p.name for p in self.state.living_players())}"
         
-        # Process actions
-        for p in self.state.living_players():
-            if not p.is_ai:
-                continue
-                
-            agent = self.agents[p.name]
-            # Role colors on device for dramatic effect
+        # 1. Mafia Action
+        self.announcer.speak("Mafia, wake up and choose your target for tonight.")
+        time.sleep(1)
+        for p in self.state.mafia_players():
+            if not p.is_ai: continue
             display.set_role_leds(self.fw, p.role)
-            
-            result = agent.night_action(context)
+            display.render_main_display(self.fw, self.state, "Thinking...", active_player=p)
+            result = self.agents[p.name].night_action(context)
             self.state.log(f"[{p.name}/Thought] {result.get('private_thought')}", public=False)
-            
             action = result.get("action", {})
-            if action.get("type") == "kill" and p.role == Role.MAFIA:
+            if action.get("type") == "kill":
                 target = action.get("target")
                 if target: mafia_votes[target] = mafia_votes.get(target, 0) + 1
-            elif action.get("type") == "save" and p.role == Role.DOCTOR:
-                self.state.night_actions.doctor_save = action.get("target")
-            elif action.get("type") == "investigate" and p.role == Role.DETECTIVE:
+            time.sleep(1)
+        display.clear_leds(self.fw)
+        
+        # 2. Detective Action
+        self.announcer.speak("Detective, wake up and choose someone to investigate.")
+        time.sleep(1)
+        for p in [x for x in self.state.living_players() if x.role == Role.DETECTIVE]:
+            if not p.is_ai: continue
+            display.set_role_leds(self.fw, p.role)
+            display.render_main_display(self.fw, self.state, "Thinking...", active_player=p)
+            result = self.agents[p.name].night_action(context)
+            self.state.log(f"[{p.name}/Thought] {result.get('private_thought')}", public=False)
+            action = result.get("action", {})
+            if action.get("type") == "investigate":
                 investigate_target = action.get("target")
                 t_player = self.state.get_player(investigate_target)
                 is_mafia = t_player and t_player.role == Role.MAFIA
                 self.state.night_actions.detective_result = is_mafia
                 self.state.log(f"Detective {p.name} investigated {investigate_target}. Result: {is_mafia}", public=False)
-                
-            time.sleep(1) # Dramatic pause
-            
+            time.sleep(1)
         display.clear_leds(self.fw)
         
+        # 3. Doctor Action
+        self.announcer.speak("Doctor, wake up and choose someone to save.")
+        time.sleep(1)
+        for p in [x for x in self.state.living_players() if x.role == Role.DOCTOR]:
+            if not p.is_ai: continue
+            display.set_role_leds(self.fw, p.role)
+            display.render_main_display(self.fw, self.state, "Thinking...", active_player=p)
+            result = self.agents[p.name].night_action(context)
+            self.state.log(f"[{p.name}/Thought] {result.get('private_thought')}", public=False)
+            action = result.get("action", {})
+            if action.get("type") == "save":
+                self.state.night_actions.doctor_save = action.get("target")
+            time.sleep(1)
+        display.clear_leds(self.fw)
+        
+        # 4. Townsfolk Actions (Background thoughts)
+        for p in self.state.town_players():
+            if p.role in (Role.DOCTOR, Role.DETECTIVE) or not p.is_ai: continue
+            display.render_main_display(self.fw, self.state, "Sleeping...", active_player=p)
+            result = self.agents[p.name].night_action(context)
+            self.state.log(f"[{p.name}/Thought] {result.get('private_thought')}", public=False)
+            
         if mafia_votes:
             # Simple majority or random tiebreak
             self.state.night_actions.mafia_target = sorted(mafia_votes.items(), key=lambda x: x[1], reverse=True)[0][0]
@@ -173,6 +203,8 @@ class MafiaEngine:
         saved_name = self.state.night_actions.doctor_save
         
         self.state.phase = GamePhase.DAY_DISCUSSION
+        # Update display immediately before narrator blocks with audio
+        display.render_main_display(self.fw, self.state)
         self.announcer.announce_phase("day_discussion", self.state.turn)
         
         if victim_name and victim_name.lower() != str(saved_name).lower():
@@ -186,8 +218,6 @@ class MafiaEngine:
         else:
             self.state.log("No one died in the night.")
             self.announcer.announce_no_death()
-            
-        display.render_main_display(self.fw, self.state)
 
     def run_day_discussion(self, rounds: int = 1):
         context = f"Day {self.state.turn} begins. Players alive: {', '.join(p.name for p in self.state.living_players())}"
@@ -209,7 +239,7 @@ class MafiaEngine:
                 self.state.log(f"{p.name}: {statement}")
                 
                 if statement:
-                    display.render_main_display(self.fw, self.state, f"{p.name}: '{statement}'")
+                    display.render_main_display(self.fw, self.state, f"'{statement}'", active_player=p)
                     self.announcer.speak(statement, p.voice_id)
                 time.sleep(2)
                 
@@ -237,9 +267,11 @@ class MafiaEngine:
             if target and self.state.get_player(target):
                 self.state.votes[p.name] = target
                 self.state.log(f"{p.name} voted for {target}")
+                display.render_main_display(self.fw, self.state, f"I vote for {target}", active_player=p)
                 self.announcer.speak(f"I vote for {target}", p.voice_id)
             else:
                 self.state.log(f"{p.name} abstained.")
+                display.render_main_display(self.fw, self.state, "I abstain.", active_player=p)
                 self.announcer.speak("I abstain.", p.voice_id)
                 
             time.sleep(1)

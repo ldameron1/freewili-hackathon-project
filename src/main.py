@@ -1,3 +1,4 @@
+#!/home/ld/Pictures/Hackathon/venv/bin/python
 """Entry point for the FREE-WILi Mafia Game."""
 import argparse
 import time
@@ -6,6 +7,10 @@ import sys
 import logging
 
 from dotenv import load_dotenv
+
+# Add project root to path so we can import src modules seamlessly
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Suppress verbose Flask output to keep console clean for game logs
 log = logging.getLogger('werkzeug')
@@ -24,24 +29,33 @@ def start_flask(engine: MafiaEngine):
     app = create_app(engine)
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
-def build_ai_players() -> list[Player]:
-    # 9 player game: 7 Town, 2 Mafia (1 Human, 8 AI)
+def build_ai_players(mode: str) -> list[Player]:
+    # 9 player game: 7 Town, 2 Mafia
     roles = [
         Role.MAFIA, Role.MAFIA,
         Role.DOCTOR, Role.DETECTIVE,
         Role.TOWN, Role.TOWN, Role.TOWN, Role.TOWN, Role.TOWN
     ]
-    # "User" is the human player
-    names = ["User", "Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi"]
+    
+    # "User" is the human player, fallback if AI-only
+    if mode == "mixed":
+        # 1 Human, 8 AI (MVP for now, can expand to 2H+7AI later)
+        names = ["User", "Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi"]
+    elif mode == "human_only":
+        names = ["User", "User2", "User3", "User4", "User5", "User6", "User7", "User8", "User9"]
+    else: # ai_only
+        names = ["Zeus", "Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi"]
+
     personalities = [
-        "The human participant", "Analytical and cautious", "Boisterous and friendly",
+        "The human participant" if mode == "mixed" else "Boisterous and friendly", 
+        "Analytical and cautious", "Boisterous and friendly",
         "Nervous and defensive", "Quiet but observant", "Aggressive and accusatory",
         "Sarcastic and witty", "Helpful and naive", "Overthinking everything"
     ]
     
     players = []
     for i in range(9):
-        is_human = (names[i] == "User")
+        is_human = (names[i].startswith("User"))
         players.append(Player(
             name=names[i],
             role=roles[i],
@@ -101,13 +115,20 @@ def handle_camera_test(fw: FreeWili):
     fw.show_text_display(f"CAMERA TEST\\n\\n{msg}", FreeWiliProcessorType.Display)
     time.sleep(3)
 
-def wait_for_menu_selection(fw: FreeWili) -> int:
+def wait_for_menu_selection(fw: FreeWili) -> str:
     """Uses White=Up, Yellow=Down, Green=Select."""
     items = [
-        "Start Mafia Game", 
+        "Play: AI-Only Mode", 
+        "Play: Mixed Mode",
+        "Play: Host Mode",
+        "Live Agent (Stretch)",
         "WiFi Setup (Bottlenose)",
         "Camera Test (WilEye)",
         "Exit"
+    ]
+    actions = [
+        "ai_only", "mixed", "human_only", "live_agent_stretch", 
+        "wifi", "camera", "exit"
     ]
     selected = 0
     display.render_selection_screen(fw, "MAFIA MENU", items, selected)
@@ -133,13 +154,42 @@ def wait_for_menu_selection(fw: FreeWili) -> int:
                     
                 elif name == "Green":  # SELECT
                     fw.play_audio_tone(660, 0.1, 0.3)
-                    return selected
+                    return actions[selected]
                     
         last_buttons = buttons
         time.sleep(0.05)
 
 
+
 def main():
+    import psutil
+    import os
+    
+    # 1. Kill any suspended/orphaned instances holding the serial ports
+    current_pid = os.getpid()
+    parent_pid = os.getppid()
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if proc.pid not in (current_pid, parent_pid) and proc.info.get('cmdline'):
+                cmdline_str = " ".join(proc.info['cmdline'])
+                # Only target python executables running main.py to avoid killing our own sudo wrapper
+                if 'src/main.py' in cmdline_str and 'python' in proc.info.get('name', '').lower():
+                    print(f"Cleaning up old suspended process {proc.pid} to free /dev/ttyACM...")
+                    proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+            
+    # 2. Free port 5000 if a hanging Flask UI is holding it
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            for conn in proc.connections(kind='inet'):
+                if conn.laddr.port == 5000:
+                    print(f"Freeing port 5000 from hanging UI process {proc.pid}...")
+                    proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    print("Cleanup complete.")
     load_dotenv()
     
     parser = argparse.ArgumentParser()
@@ -150,27 +200,40 @@ def main():
     try:
         fw = FreeWili.find_first().expect("No FREE-WILi found")
         fw.open().expect("Failed to connect to FREE-WILi")
+        
+        # Hardware Override: Disable badge-mode to prevent unwanted brackets/padding on the LCD
+        if fw.main_serial: fw.main_serial.is_badge = False
+        if fw.display_serial: fw.display_serial.is_badge = False
+        
         print(f"Connected: {fw}")
     except Exception as e:
         print(f"Hardware failure: {e}")
         sys.exit(1)
 
     try:
+        mode = "ai_only"
         if not args.skip_menu:
             while True:
                 selection = wait_for_menu_selection(fw)
-                if selection == 0: # Start Game
+                if selection in ["ai_only", "mixed", "human_only", "live_agent_stretch"]:
+                    mode = selection
                     break
-                elif selection == 1: # WiFi
+                elif selection == "wifi":
                     handle_wifi_setup(fw)
-                elif selection == 2: # Camera
+                elif selection == "camera":
                     handle_camera_test(fw)
-                elif selection == 3: # Exit
+                elif selection == "exit":
                     return
 
-        print("\nStarting Game Engine...")
+        print(f"\\nStarting Game Engine in {mode} mode...")
+        
+        if mode == "live_agent_stretch":
+            fw.show_text_display("LIVE AGENT MODE\\n\\nStretch Goal\\nComing Soon!", FreeWiliProcessorType.Display)
+            time.sleep(3)
+            return
+            
+        players = build_ai_players(mode)
         engine = MafiaEngine(fw)
-        players = build_ai_players()
         
         # Start Flask UI in background
         print("Starting Moderator UI on http://localhost:5000")

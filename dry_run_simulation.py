@@ -30,7 +30,7 @@ sys.modules["freewili.types"] = mock_fw_types_mod
 
 # 2. Now import the engine
 from src.game.engine import MafiaEngine
-from src.game.state import GameState, Player, Role, GamePhase
+from src.game.state import GameState, Player, Role, GamePhase, DEFAULT_VOICES
 
 class DryRunSimulation:
     def __init__(self):
@@ -67,10 +67,10 @@ class DryRunSimulation:
         print("\n[STEP 1] Setting up game...")
         players = [
             Player(name="User", role=Role.TOWN, is_ai=False),
-            Player(name="Alice", role=Role.MAFIA, is_ai=True),
-            Player(name="Bob", role=Role.MAFIA, is_ai=True),
-            Player(name="Charlie", role=Role.DOCTOR, is_ai=True),
-            Player(name="Dave", role=Role.DETECTIVE, is_ai=True),
+            Player(name="Alice", role=Role.MAFIA, is_ai=True, voice_id=DEFAULT_VOICES[0]),
+            Player(name="Bob", role=Role.MAFIA, is_ai=True, voice_id=DEFAULT_VOICES[1]),
+            Player(name="Charlie", role=Role.DOCTOR, is_ai=True, voice_id=DEFAULT_VOICES[2]),
+            Player(name="Dave", role=Role.DETECTIVE, is_ai=True, voice_id=DEFAULT_VOICES[3]),
         ]
         
         # Mock agent behavior

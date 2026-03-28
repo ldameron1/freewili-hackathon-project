@@ -1,0 +1,18 @@
+{
+  "name": "hackathon",
+  "version": "1.0.0",
+  "description": "> Turn the [FREE-WILi](https://freewili.com) embedded platform into an AI-powered social deduction game host — where AI agents think, speak, and scheme alongside human players.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^24.40.0"
+  }
+}

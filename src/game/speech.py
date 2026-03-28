@@ -3,12 +3,22 @@ import os
 from google import genai
 from google.genai import types
 
+MODELS_FALLBACK = [
+    "models/gemini-2.5-flash",
+    "models/gemini-2.0-flash",
+    "models/gemini-flash-latest",
+    "models/gemini-2.5-flash-lite",
+    "models/gemini-flash-lite-latest",
+    "models/gemini-2.0-flash-lite",
+]
+
 class SpeechTranscriber:
     def __init__(self):
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             pass # allow init, fail on run if no mock
         self.client = genai.Client()
+        self.model_index = 0
         
     def transcribe(self, wav_path: str) -> str:
         """Uploads WAV file and extracts spoken text."""
@@ -17,16 +27,28 @@ class SpeechTranscriber:
             # For hackathon, we could use the File API
             audio_file = self.client.files.upload(file=wav_path)
             
-            response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[
-                    "Please transcribe the speech in this audio exactly as you hear it. If there is no speech, output '[Silence]'.",
-                    audio_file
-                ]
-            )
-            text = response.text.strip()
-            print(f"[Speech] Result: {text}")
-            return text
+            for attempt in range(len(MODELS_FALLBACK)):
+                try:
+                    model_name = MODELS_FALLBACK[self.model_index]
+                    response = self.client.models.generate_content(
+                        model=model_name,
+                        contents=[
+                            "Please transcribe the speech in this audio exactly as you hear it. If there are multiple speakers, identify them as 'Speaker 1:', 'Speaker 2:', etc. If there is no speech, output '[Silence]'.",
+                            audio_file
+                        ]
+                    )
+                    text = response.text.strip()
+                    print(f"[Speech] Result ({model_name}): {text}")
+                    return text
+                except Exception as e:
+                    error_str = str(e)
+                    if "429" in error_str and "quota" in error_str.lower():
+                        self.model_index += 1
+                        if self.model_index < len(MODELS_FALLBACK):
+                            print(f"[Speech] Quota exhausted for {model_name}. Switching to {MODELS_FALLBACK[self.model_index]}...")
+                            continue
+                    raise e
+                    
         except Exception as e:
             print(f"[Speech Error] {e}")
             return "[Error transcribing]"

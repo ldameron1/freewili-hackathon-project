@@ -153,8 +153,9 @@ During open discussion, the system must identify *which* human is speaking:
 
 ## System Limitations & Notes
 
-- **FREE-WILi WiFi capability**: The FREE-WILi board (Black/Red versions) includes Sub-GHz and 2.4GHz radios (e.g., CC1101, CC1352P7) intended for protocol research (Zigbee, Thread), but *does not* have a standard built-in WiFi module for direct internet access. Therefore, the architecture relies on the Host Laptop acting as an API proxy over USB serial to reach the Gemini and ElevenLabs APIs.
-- Audio and Display latency depends on serial transfer speeds.
+- **FREE-WILi WiFi capability**: While the base FREE-WILi boards use Sub-GHz, this project successfully integrates the **Bottlenose WiFi & BT Orca** module. The device now connects directly to external hotspots (e.g., mobile "Wifi" hotspot) using the `e\w` serial command via the `main.py` setup flow.
+- **On-Device Script Storage**: Scripts like `demo_launcher.py` and `main.py` are now persisted on the internal filesystem (`DEMO.PY`, `MAFIA.PY`) as functionality milestones.
+- **Latency**: Audio and Display latency depends on serial transfer speeds, optimized by using binary chunking in the `freewili` library.
 
 ---
 
@@ -192,7 +193,9 @@ A localhost web UI served from the host laptop.
 - [x] AI-only Mafia game running end-to-end
 - [x] FREE-WILi display shows game state, agent faces, and text
 - [x] FREE-WILi speaker outputs AI agent voices (ElevenLabs TTS)
-- [x] FREE-WILi buttons navigate launcher menu
+- [x] FREE-WILi buttons navigate launcher menu (Multi-mode support)
+- [x] On-device script persistence (Sync to device milestone)
+- [x] Hotspot connectivity via Bottlenose WiFi module
 - [x] Gemini API drives agent reasoning with structured JSON output
 - [x] Basic moderator panel (localhost)
 - [x] Wristband color signaling for role assignment
@@ -203,8 +206,17 @@ A localhost web UI served from the host laptop.
 - [ ] ElevenAgents live conversational voice mode (real-time back-and-forth)
 - [ ] Personality persistence and archive system
 - [ ] Debug panel with agent thought auditing
-- [ ] Additional game modes beyond Mafia
 - [ ] Human-only mode (FREE-WILi as pure moderator)
+- [ ] Human-only mode2 (FREE-WILi orchestrates some game rules, but is controled by human moderator)
+- [ ] Additional games beyond Mafia
+- [ ] **Standalone Hardware Mode**: Entire engine running natively on the FREE-WiLi RP2040 + Bottlenose WiFi module (bypassing the host computer).
+
+### Standalone Hardware Mode (Technical Sketch)
+To eventually achieve a fully untethered "Standalone Mode" running exclusively on the FREE-WiLi hardware without a host laptop:
+1. **Network Layer**: The Bottlenose WiFi module would manage raw HTTPS TCP sockets natively instead of relying on the host. 
+2. **Text Generation**: The embedded firmware would make `POST` requests directly to the Gemini REST API endpoints, parsing the resultant JSON locally using a lightweight C/C++ library (like ArduinoJson or MicroPython's `json`).
+3. **Turn-Based Text Override**: Because streaming and decoding real-time ElevenLabs TTS audio objects over SSL requires more RAM buffers than standard microcontrollers possess, this mode would likely downgrade to a **"Text-Only" Turn-Based RPG format**, forcing players to read the physical screen instead of listening to the speaker, maximizing memory overhead for the LLM context histories.
+4. **Stripped UI**: The Flask moderator control panel would be abandoned in favor of pure on-device button coordination.
 
 ---
 
@@ -240,3 +252,39 @@ A localhost web UI served from the host laptop.
 - No majority reached → collective vote to "Sleep" (no elimination)
 - Dead players cannot speak or participate
 - After execution or sleep vote → immediately transition to Night
+## Current System State (March 28, 2026 - Final Stability Phase)
+
+The project has reached a high-stability milestone with full end-to-end AI-only gameplay on the FREE-WiLi hardware.
+
+### Audio Pipeline (The "Golden" Settings)
+*   **Sample Rate**: Consistent **8,000Hz (8kHz)** mono. While lower fidelity, this is the maximum stable throughput for the FREE-WiLi's serial-to-DAC buffer without stuttering.
+*   **Digital Gain**: **1.8x boost** applied via a **math.tanh soft-limiter**. This prevents digital clipping clicks (clipping the wave top) by gracefully "squishing" loud syllables.
+*   **Anti-Pop/Click Suppression**: 
+    *   Added **150ms of zero-padding** to the start/end of every clip.
+    *   Applied **20ms amplitude fades** to stop the hardware speaker from "snapping" during power-on/off.
+*   **Interrupt Protection**: The `GameAnnouncer` now calculates audio duration and **blocks** Python execution during playback to prevent UART file-transfer interrupts from starving the audio CPU.
+
+### AI Reasoning & Model Fallback
+*   **Universal Quota Management**: Implemented a global `MODELS_FALLBACK` chain (Gemini 2.5 → Gemini 2.0 → Gemini Flash → Gemma 3).
+*   **Global Sync**: If any single agent hits a 429 Rate Limit, they update a global index, causing all other agents to "fast-forward" to the newest working model instantly.
+*   **Gemma Compatibility Layer**: 
+    *   **History Injection**: Since Gemma doesn't support the `system_instruction` API parameter, the engine now injects prompts into the conversation `history`.
+    *   **JSON Steering**: Added organic JSON templates and a markdown-block (` ```json `) stripper to ensure structured data parsing on models without native JSON-mode.
+
+### Hardware UI & Stability
+*   **Flattened Menu**: Replaced the nested menu tree with a single, fast-access `MAFIA MENU` launch screen.
+*   **Visual Feedback**: AI characters now display their **ASCII Art Portraits** on the FREE-WiLi screen during the Night Phase while they are "thinking," providing clear state feedback.
+*   **Auto-Cleanup**: Added a `psutil` routine that automatically kills rogue/suspended Python processes on startup, preventing "Port already in use" and serial lock errors.
+
+---
+
+## Final Project Milestones met:
+- [x] **No-Click Audio**: Clean narrator and character speech.
+- [x] **Rate Limit Resilience**: Seamless hopping between 4 different LLM backends.
+- [x] **Hardware UX**: Responsive buttons, clear ASCII graphics, and intuitive menus.
+- [x] **Serial Reliability**: Zero bus starvation during playback.
+
+### Next Steps for Future Iterations:
+1.  **WiFi Standalone**: Migrate the API relay logic onto the Bottlenose ESP32 module itself.
+2.  **Voice Diarization**: Implement local human-voice thresholding for the registration phase.
+3.  **Radio Expansion**: Fully implement the 433MHz "wristband shuffle" for 2+ humans.

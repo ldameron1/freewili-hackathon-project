@@ -3,38 +3,57 @@ import time
 from freewili import FreeWili
 from freewili.types import FreeWiliProcessorType
 
-from .state import GameState, Role, ROLE_LED_COLORS
+from .state import GameState, Role, ROLE_LED_COLORS, Player
 
-def render_main_display(fw: FreeWili, state: GameState, message: str = "") -> None:
+# ASCII Art Portraits for AI Personalities (Charming Edition)
+ASCII_PHIZ = {
+    "Zeus":     ["  /\\___/\\  ", " (  ^ . ^ ) ", "  \\  _  /  ", "   v---v   "],
+    "Alice":    ["  _______  ", " | [0-0] | ", " |  ___  | ", "  \\_____/  "],
+    "Bob":      ["  _______  ", " (  >.<  ) ", " (   o   ) ", "  \\_____/  "],
+    "Charlie":  ["   _____   ", "  / o o \\  ", " (  ---  ) ", "  \\_____/  "],
+    "Dave":     ["  -------  ", " |  -_-  | ", " |   _   | ", "  -------  "],
+    "Eve":      ["  \\\\\\\\^////  ", " (  #.#  ) ", "  \\  ~  /  ", "   v---v   "],
+    "Frank":    ["   _____   ", "  / s s \\  ", " (  ---  ) ", "  \\_mmm_/  "],
+    "Grace":    ["   /\\ /\\   ", "  ( o.o )  ", "   \\ u /   ", "    ---    "],
+    "Heidi":    ["  ///////  ", " (  @ @  ) ", " (   ?   ) ", "  \\\\\\\\\\\\\\  "],
+    "User":     ["   _____   ", "  |o---o|  ", "  |  ^  |  ", "  \\_---_/  "],
+    "Default":  ["    ???    ", "   ( ? )   ", "    ???    ", "           "]
+}
+
+def render_main_display(fw: FreeWili, state: GameState, message: str = "", active_player: Player = None) -> None:
     """Render the current game state to the 320x240 screen."""
-    # Screen is 320x240, standard font is approx 30-40 chars wide depending on size
     lines = [
-        f"== PHASE: {state.phase.value.upper()} (Turn {state.turn}) ==",
+        f"{state.phase.value.split('_')[0].upper()}-{state.turn}",
         ""
     ]
     
-    alive_count = len(state.living_players())
-    lines.append(f"Players Alive: {alive_count}/{len(state.players)}")
-    lines.append("-" * 30)
-    
-    # Show active players briefly
-    for p in state.living_players()[:5]:  # show top 5 fitting on screen
-        icon = "*" if p.is_ai else "H"
-        lines.append(f"[{icon}] {p.name}")
-        
-    if len(state.living_players()) > 5:
-        lines.append("...")
-        
-    if message:
+    if active_player:
+        # Show the face of the active speaker
+        face = ASCII_PHIZ.get(active_player.name, ASCII_PHIZ["Default"])
+        lines.append(f"  {active_player.name} speaks:")
+        for face_line in face:
+            lines.append("    " + face_line)
         lines.append("")
-        lines.append(">> " + message[:50])
-        
-    # Pad to clear screen and avoid trailing black bars from old renders
+        if message:
+            lines.append(">> " + message[:60])
+    else:
+        alive_count = len(state.living_players())
+        lines.append(f"Players Alive: {alive_count}/{len(state.players)}")
+        lines.append("-" * 30)
+ 
+        for p in state.living_players()[:5]:
+            icon = "*" if p.is_ai else "H"
+            lines.append(f"[{icon}] {p.name}")
+            
+        if message:
+            lines.append("")
+            lines.append(">> " + message[:50])
+            
+    # Pad to clear screen
     while len(lines) < 12:
         lines.append("")
-
-    text = "\\n".join(lines)
-    # Ensure ASCII only
+ 
+    text = "\n".join(lines)
     text = text.encode('ascii', 'replace').decode('ascii')
     fw.show_text_display(text, FreeWiliProcessorType.Display)
 
@@ -46,13 +65,14 @@ def render_selection_screen(fw: FreeWili, title: str, items: list[str], selected
         ""
     ]
     for i, item in enumerate(items):
-        prefix = ">>" if i == selected else "  "
-        lines.append(f"{prefix} [{i+1}] {item}")
+        prefix = ">" if i == selected else " "
+        lines.append(f"{prefix}{item[:15]}")
         
     lines.append("")
     lines.append("[W]Up [Y]Down [G]Select")
-    text = "\\n".join(lines)
+    text = "\n".join(lines)
     text = text.encode('ascii', 'replace').decode('ascii')
+    
     fw.show_text_display(text, FreeWiliProcessorType.Display)
 
 def set_role_leds(fw: FreeWili, role: Role) -> None:

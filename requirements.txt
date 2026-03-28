@@ -2,4 +2,6 @@ freewili
 google-genai
 elevenlabs
 Flask
+psutil
+python-dotenv
 pydantic

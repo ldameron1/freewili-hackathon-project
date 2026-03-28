@@ -40,29 +40,74 @@ ROLE_INSTRUCTIONS = {
     "Townsperson": "You have no special night ability. Win by deducing and eliminating Mafia through discussion and voting.",
 }
 
+MODELS_FALLBACK = [
+    "models/gemini-2.5-flash",
+    "models/gemini-2.0-flash",
+    "models/gemini-flash-latest",
+    "models/gemma-3-27b-it",
+    "models/gemma-3-12b-it",
+    "models/gemma-3-4b-it",
+    "models/gemma-3-1b-it",
+    "models/gemini-2.5-flash-lite",
+    "models/gemini-flash-lite-latest",
+    "models/gemini-2.0-flash-lite",
+]
+
+GLOBAL_MODEL_INDEX = 0
+
 class AIAgent:
     def __init__(self, player: "Player", mafia_allies: list[str] | None = None):
+        global GLOBAL_MODEL_INDEX
         self.player = player
         self.mafia_allies = mafia_allies or []
         self.history: list[dict] = []
         self.last_protected: str | None = None
+        self.model_index = GLOBAL_MODEL_INDEX
 
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            # We don't crash here so tests/dry runs can pass if mocked
             pass
             
         self.client = genai.Client()
         self._build_system_prompt()
-        self.chat = self.client.chats.create(
-            model="gemini-2.5-flash",
-            config=types.GenerateContentConfig(
-                system_instruction=self._system,
-                temperature=0.9,
-                response_mime_type="application/json",
-                response_schema=AgentResponse,
+        self._create_chat()
+
+    def _create_chat(self):
+        model_name = MODELS_FALLBACK[self.model_index]
+        print(f"[AGENT:{self.player.name}] Initializing chat with {model_name}")
+        
+        # Gemma models on the Gemini API do not support the 'system_instruction' parameter
+        if "gemma" in model_name.lower():
+            gemma_json_instruction = (
+                "You MUST respond ONLY with a valid JSON object matching this schema:\n"
+                "{\n"
+                "  \"private_thought\": \"Your internal reasoning.\",\n"
+                "  \"public_statement\": \"What you say out loud.\",\n"
+                "  \"action\": {\"type\": \"none|vote|accuse|defend|kill|save|investigate\", \"target\": \"PlayerName\"},\n"
+                "  \"emotion\": \"calm|nervous|suspicious|confident\"\n"
+                "}\n"
+                "Do not include markdown blocks or any other text outside the JSON."
             )
-        )
+            self.chat = self.client.chats.create(
+                model=model_name,
+                config=types.GenerateContentConfig(
+                    temperature=0.9,
+                ),
+                history=[
+                    types.Content(role="user", parts=[types.Part.from_text(text=f"System Instructions:\n{self._system}\n\n{gemma_json_instruction}")]),
+                    types.Content(role="model", parts=[types.Part.from_text(text="Understood. I am ready to play.")])
+                ]
+            )
+        else:
+            self.chat = self.client.chats.create(
+                model=model_name,
+                config=types.GenerateContentConfig(
+                    system_instruction=self._system,
+                    temperature=0.9,
+                    response_mime_type="application/json",
+                    response_schema=AgentResponse,
+                )
+            )
 
     def _build_system_prompt(self) -> str:
         role = self.player.role
@@ -83,25 +128,67 @@ class AIAgent:
 
     def _call(self, prompt: str) -> dict:
         """Send a prompt and return the structured response as a dict."""
-        try:
-            time.sleep(4.5)  # Pace to 13 RPM to respect Free Tier quota
-            response = self.chat.send_message(prompt)
-            # Response should be valid JSON matching AgentResponse schema
-            result = json.loads(response.text)
-            
-            # Ensure safe fallback structure if parsing somehow fails
-            if not isinstance(result, dict):
-                raise ValueError("Model did not return a JSON object")
+        global GLOBAL_MODEL_INDEX
+        
+        for attempt in range(len(MODELS_FALLBACK)):
+            # Fast-forward if another agent already successfully failed-over to a newer model
+            if self.model_index < GLOBAL_MODEL_INDEX:
+                self.model_index = GLOBAL_MODEL_INDEX
+                self._create_chat()
                 
-            return result
-        except Exception as e:
-            print(f"[AGENT:{self.player.name}] Error: {e}")
-            return {
-                "private_thought": f"Error: {e}",
-                "public_statement": "I... need a moment to think.",
-                "action": {"type": "none", "target": ""},
-                "emotion": "calm",
-            }
+            try:
+                time.sleep(4.5)  # Pace to 13 RPM to respect Free Tier quota
+                response = self.chat.send_message(prompt)
+                
+                raw_text = response.text.strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:].strip()
+                elif raw_text.startswith("```"):
+                    raw_text = raw_text[3:].strip()
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[:-3].strip()
+                    
+                result = json.loads(raw_text)
+                
+                if not isinstance(result, dict):
+                    raise ValueError("Model did not return a JSON object")
+                    
+                return result
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str and "quota" in error_str.lower():
+                    self.model_index += 1
+                    # Ensure we push the global watermark forward so others don't hit the same wall
+                    if self.model_index > GLOBAL_MODEL_INDEX:
+                        GLOBAL_MODEL_INDEX = self.model_index
+                        
+                    if self.model_index < len(MODELS_FALLBACK):
+                        new_model = MODELS_FALLBACK[self.model_index]
+                        print(f"[AGENT:{self.player.name}] Quota exhausted. Switching to {new_model}...")
+                        self._create_chat()
+                        continue
+                
+                print(f"[AGENT:{self.player.name}] Error: {e}")
+                return {
+                    "private_thought": f"Error: {e}",
+                    "public_statement": "I... need a moment to think.",
+                    "action": {"type": "none", "target": ""},
+                    "emotion": "calm",
+                }
+        
+        return {
+            "private_thought": "Failed after exhausting all fallback models.",
+            "public_statement": "I... need a moment to think.",
+            "action": {"type": "none", "target": ""},
+            "emotion": "calm",
+        }
+        
+        return {
+            "private_thought": "Failed after exhausting all fallback models.",
+            "public_statement": "I... need a moment to think.",
+            "action": {"type": "none", "target": ""},
+            "emotion": "calm",
+        }
 
     def night_action(self, game_context: str) -> dict:
         """Called during night phase. Role-specific."""
