@@ -1,0 +1,46 @@
+# ========================================
+# AI Integrated Social Intrigue Game(s)
+# ========================================
+
+# --- Secrets & API Keys ---
+.env
+.env.*
+*.key
+secrets/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.venv/
+env/
+
+# --- ESP-IDF / Embedded Build ---
+build/
+sdkconfig.old
+managed_components/
+
+# --- IDE & Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# --- OS Files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+
+# --- Logs & Temp ---
+*.log
+tmp/
+temp/
