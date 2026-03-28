@@ -13,7 +13,7 @@ A hackathon project that turns the **FREE-WILi** embedded development platform i
 | **FREE-WILi** (RP2040 + ICE40 FPGA) | Central hub: display, buttons, speaker, LEDs, radio, game logic | Host via USB |
 | **ESP32-P4-EYE** (WILEYE Camera Orca) | Camera for facial reaction analysis of human players | Plugged into FREE-WILi Orca port |
 | **DEF CON Wristbands** (×2) | LED role indicators for human players | Controlled via 433MHz radio from FREE-WILi |
-| **Host Laptop** | Thin API proxy: forwards Gemini/ElevenLabs calls over USB serial | USB to FREE-WILi |
+| **Host Laptop** | Thin API proxy: forwards Gemini/ElevenLabs calls over USB serial (temporary measure/alternative mode, ideally we want to use the wifi module that's connected to the wili for internet)) | USB to FREE-WILi |
 
 ### Software Stack
 
