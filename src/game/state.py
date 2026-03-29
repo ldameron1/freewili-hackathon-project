@@ -140,6 +140,11 @@ class GameState:
             return "Mafia"
         return None
 
+    def reset_daily_talk_counts(self) -> None:
+        for p in self.players:
+            p.talk_count = 0
+        self.log("Daily talk budgets reset.")
+
     def to_dict(self) -> dict:
         return {
             "phase": self.phase.value,
