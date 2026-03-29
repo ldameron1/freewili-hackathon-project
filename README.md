@@ -71,24 +71,29 @@ git clone <repo-url>
 cd Hackathon
 
 # Create virtual environment
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies (when requirements.txt exists)
-pip install freewili google-generativeai elevenlabs
+# Install dependencies
+pip install -r requirements.txt
 
 # Configure API keys
-cp .env.example .env
-# Edit .env with your GEMINI_API_KEY and ELEVENLABS_API_KEY
+# Create .env with your GEMINI_API_KEY and ELEVENLABS_API_KEY
 ```
 
 ### Run
 
+To run the main Mafia game engine, you must use `sudo` to access the FREE-WILi serial ports, and you must point to the virtual environment's Python to ensure dependencies are found:
+
 ```bash
-# Run the interactive demo launcher
-source venv/bin/activate
-python src/demo_launcher.py
+# Run the main game (standard)
+sudo ./venv/bin/python3 src/main.py
+
+# Run and skip the hardware menu (auto-start AI-only)
+sudo ./venv/bin/python3 src/main.py --skip-menu
 ```
+
+*Note: Running with `sudo` is required for serial port access on Linux.*
 
 ---
 

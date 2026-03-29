@@ -24,8 +24,11 @@ ASCII_PHIZ = {
     "Default":  ["    ???    ", "   ( ? )   ", "    ???    ", "           "]
 }
 
+# FLAG FOR MVP: Set to True for text mode, False for GUI mode
+USE_TEXT_MODE = True
+
 def render_main_display(fw: FreeWili, state: GameState, message: str = "", active_player: Player = None) -> None:
-    """Render the current game state as a Noir-Tech image to the 320x240 screen."""
+    """Render the current game state. Defaults to Text mode for MVP stability."""
     title = f"{state.phase.value.split('_')[0]} : TURN {state.turn}"
     
     items = []
@@ -33,28 +36,61 @@ def render_main_display(fw: FreeWili, state: GameState, message: str = "", activ
         items.append(f"ACTIVE: {active_player.name}")
         items.append(f"BUDGET: {active_player.talk_count}/5")
         if message:
-            # Wrap message or truncate if needed, but for now just show it
             items.append(message)
     else:
         for p in state.living_players()[:6]:
             status = "[ALIVE]" if p.alive else "[DEAD]"
             items.append(f"{p.name} {status}")
 
+    if USE_TEXT_MODE:
+        # Format as simple multiline text
+        text_content = f"{title}\\n\\n" + "\\n".join(items)
+        # show_text_display takes (text, processor)
+        fw.show_text_display(text_content, FreeWiliProcessorType.Display)
+        return
+
+    # --- GUI MODE (PRESERVED) ---
     fwi_path = renderer.render_game_screen(title, items, turn_info=f"T{state.turn}")
     
-    # Upload and Show (Use unique paths to bypass hardware file cache)
-    remote_path = f"/images/g_{int(time.time())}.fwi"
-    fw.send_file(fwi_path, remote_path, processor=FreeWiliProcessorType.Display)
-    fw.show_gui_image(remote_path)
+    # 3. Upload and Show
+    # Use a short, fixed swap filename (8.3 limit)
+    remote_path = "/img_d.fwi"
+    res = fw.send_file(fwi_path, remote_path, processor=FreeWiliProcessorType.Display)
+    if not res.is_ok():
+        print(f"[DISPLAY ERROR] send_file failed: {res.unwrap_err()}")
+        return
+
+    res = fw.show_gui_image(remote_path)
+    if not res.is_ok():
+        print(f"[DISPLAY ERROR] show_gui_image failed: {res.unwrap_err()}")
 
 def render_selection_screen(fw: FreeWili, title: str, items: list[str], selected: int) -> None:
-    """Render a premium Noir selection menu as an image."""
+    """Render a selection menu. Defaults to Text mode for MVP stability."""
+    
+    if USE_TEXT_MODE:
+        # Format as text with a cursor
+        text_lines = [title, ""]
+        for i, item in enumerate(items):
+            cursor = "> " if i == selected else "  "
+            text_lines.append(f"{cursor}{item}")
+        
+        text_content = "\\n".join(text_lines)
+        fw.show_text_display(text_content, FreeWiliProcessorType.Display)
+        return
+
+    # --- GUI MODE (PRESERVED) ---
     fwi_path = renderer.render_menu(title, items, selected)
     
-    # Upload and Show (Unique paths for menu items)
-    remote_path = f"/images/m_{int(time.time())}.fwi"
-    fw.send_file(fwi_path, remote_path, processor=FreeWiliProcessorType.Display)
-    fw.show_gui_image(remote_path)
+    # Upload and Show (Short 8.3 name for stable selection)
+    remote_path = "/img_m.fwi"
+    res = fw.send_file(fwi_path, remote_path, processor=FreeWiliProcessorType.Display)
+    if not res.is_ok():
+        print(f"[MENU ERROR] send_file failed: {res.unwrap_err()}")
+        return
+        
+    res = fw.show_gui_image(remote_path)
+    if not res.is_ok():
+        print(f"[MENU ERROR] show_gui_image failed: {res.unwrap_err()}")
 
 def set_role_leds(fw: FreeWili, role: Role) -> None:
     """Set all LEDs to the role color."""

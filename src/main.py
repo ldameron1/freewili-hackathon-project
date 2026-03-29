@@ -211,19 +211,18 @@ def main():
         sys.exit(1)
 
     try:
-        mode = "ai_only"
-        if not args.skip_menu:
-            while True:
-                selection = wait_for_menu_selection(fw)
-                if selection in ["ai_only", "mixed", "human_only", "live_agent_stretch"]:
-                    mode = selection
-                    break
-                elif selection == "wifi":
-                    handle_wifi_setup(fw)
-                elif selection == "camera":
-                    handle_camera_test(fw)
-                elif selection == "exit":
-                    return
+        mode = "ai_only" if args.skip_menu else None
+        
+        while not mode:
+            selection = wait_for_menu_selection(fw)
+            if selection in ["ai_only", "mixed", "human_only", "live_agent_stretch"]:
+                mode = selection
+            elif selection == "wifi":
+                handle_wifi_setup(fw)
+            elif selection == "camera":
+                handle_camera_test(fw)
+            elif selection == "exit":
+                return
 
         print(f"\\nStarting Game Engine in {mode} mode...")
         

@@ -41,6 +41,9 @@ Thumbs.db
 desktop.ini
 *.lnk
 
+# --- Node ---
+node_modules/
+
 # --- Logs & Temp ---
 *.log
 tmp/
