@@ -37,7 +37,7 @@ def render_main_display(fw: FreeWili, state: GameState, message: str = "", activ
             items.append(message)
     else:
         for p in state.living_players()[:6]:
-            status = "[ALIVE]" if p.is_living else "[DEAD]"
+            status = "[ALIVE]" if p.alive else "[DEAD]"
             items.append(f"{p.name} {status}")
 
     fwi_path = renderer.render_game_screen(title, items, turn_info=f"T{state.turn}")
