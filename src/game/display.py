@@ -43,17 +43,13 @@ def render_main_display(fw: FreeWili, state: GameState, message: str = "", activ
             items.append(f"{p.name} {status}")
 
     if USE_TEXT_MODE:
-        # Format as simple multiline text
-        text_content = f"{title}\\n\\n" + "\\n".join(items)
-        # show_text_display takes (text, processor)
+        # Use real newlines for the hardware display
+        text_content = f"{title}\n\n" + "\n".join(items)
         fw.show_text_display(text_content, FreeWiliProcessorType.Display)
         return
 
     # --- GUI MODE (PRESERVED) ---
     fwi_path = renderer.render_game_screen(title, items, turn_info=f"T{state.turn}")
-    
-    # 3. Upload and Show
-    # Use a short, fixed swap filename (8.3 limit)
     remote_path = "/img_d.fwi"
     res = fw.send_file(fwi_path, remote_path, processor=FreeWiliProcessorType.Display)
     if not res.is_ok():
@@ -68,20 +64,18 @@ def render_selection_screen(fw: FreeWili, title: str, items: list[str], selected
     """Render a selection menu. Defaults to Text mode for MVP stability."""
     
     if USE_TEXT_MODE:
-        # Format as text with a cursor
-        text_lines = [title, ""]
+        # Use real newlines and a simple cursor
+        text_lines = [title, "----------------", ""]
         for i, item in enumerate(items):
-            cursor = "> " if i == selected else "  "
-            text_lines.append(f"{cursor}{item}")
+            cursor = ">" if i == selected else " "
+            text_lines.append(f"{cursor} {item}")
         
-        text_content = "\\n".join(text_lines)
+        text_content = "\n".join(text_lines)
         fw.show_text_display(text_content, FreeWiliProcessorType.Display)
         return
 
     # --- GUI MODE (PRESERVED) ---
     fwi_path = renderer.render_menu(title, items, selected)
-    
-    # Upload and Show (Short 8.3 name for stable selection)
     remote_path = "/img_m.fwi"
     res = fw.send_file(fwi_path, remote_path, processor=FreeWiliProcessorType.Display)
     if not res.is_ok():
@@ -121,20 +115,12 @@ def run_led_countdown(fw: FreeWili, duration_sec: int) -> None:
     time.sleep(0.5)
     
     for i in reversed(range(total_leds)):
-        # Calculate time passed for this LED chunk
         start = time.time()
-        
-        # Make the current "active" LED fade or pulse to show time ticking
         while time.time() - start < interval:
             progress = (time.time() - start) / interval
-            # fade from Green to Yellow to Red
             r = int(20 * progress)
             g = int(20 * (1.0 - progress))
             fw.set_board_leds(i, r, g, 0)
             time.sleep(0.1)
-            
-        # Turn off LED when its chunk is done
         fw.set_board_leds(i, 0, 0, 0)
-        
-    # Time's up — flash red
     flash_leds(fw, 20, 0, 0, count=2, delay=0.1)

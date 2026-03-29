@@ -4,6 +4,7 @@ import random
 import os
 
 from freewili import FreeWili
+from freewili.types import ButtonColor
 from .state import GameState, Player, Role, GamePhase
 from .agents import AIAgent
 from .announcer import GameAnnouncer
@@ -35,42 +36,14 @@ class MafiaEngine:
         display.render_main_display(self.fw, self.state, "Game Initialized")
         self.state.log("Game initialized with {} players".format(len(players)))
 
-        # Wristband pseudo-random assignment logic
+        # Wristband assignment (DISABLED FOR DEMO)
+        """
         human_players = [p for p in players if not p.is_ai]
         if human_players:
             COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Cyan", "White"]
-            
-            # Transmit "shuffle" payload via 433MHz
-            try:
-                if hasattr(self.fw, 'select_radio') and hasattr(self.fw, 'write_radio'):
-                    self.fw.select_radio(1)
-                    shuffle_times = random.randint(3, 7)
-                    self.state.log(f"Shuffling wristbands {shuffle_times} times...")
-                    for _ in range(shuffle_times):
-                        # Robust shuffle packet: preamble + length + command (0x53 = 'S') + random bytes + checksum
-                        packet = b"\xAA\xAA\xAA\xAA\x05\x53" + os.urandom(4)
-                        checksum = sum(packet) & 0xFF
-                        packet += bytes([checksum])
-                        self.fw.write_radio(packet)
-                        time.sleep(0.5)
-            except Exception as e:
-                self.state.log(f"Radio shuffle skipped: {e}", public=False)
-                
-            assigned_colors = random.sample(COLORS, len(human_players))
-            announcement = "Wristbands shuffled. "
-            for p, color in zip(human_players, assigned_colors):
-                self.state.log(f"Assigned {color} band to {p.name} ({p.role.value}).", public=False)
-                announcement += f"The {color} wristband is {p.name}, playing as a {p.role.value}. "
-                
-            self.announcer.speak(announcement)
-            time.sleep(4)
-            
-            # Send 'Set All Red' command placeholder
-            try:
-                if hasattr(self.fw, 'select_radio') and hasattr(self.fw, 'write_radio'):
-                    self.fw.write_radio(b'\xFF\xFF\x00\x00'*5)
-            except Exception:
-                pass
+            ...
+        """
+        self.state.log("Skipping wristband setup.")
 
     def run_registration_phase(self):
         """Register human players with photo and voice ID."""

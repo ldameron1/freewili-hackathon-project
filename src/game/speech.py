@@ -14,14 +14,16 @@ MODELS_FALLBACK = [
 
 class SpeechTranscriber:
     def __init__(self):
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            pass # allow init, fail on run if no mock
-        self.client = genai.Client()
+        self.api_key = os.environ.get("GEMINI_API_KEY")
+        if not self.api_key:
+            print("[Speech] Warning: GEMINI_API_KEY not found in environment.")
+        self.client = genai.Client(api_key=self.api_key)
         self.model_index = 0
         
     def transcribe(self, wav_path: str) -> str:
         """Uploads WAV file and extracts spoken text."""
+        if not self.api_key:
+            return "[No API Key]"
         try:
             print(f"[Speech] Transcribing {wav_path}...")
             # For hackathon, we could use the File API

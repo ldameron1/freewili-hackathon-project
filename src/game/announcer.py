@@ -22,7 +22,7 @@ class GameAnnouncer:
         self.uploaded_sfx = set()
         
         # Base path for local assets
-        self.sfx_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "sfx")
+        self.sfx_dir = os.path.join(os.path.dirname(__file__), "sfx")
         
         # Load persistent config if exists
         if os.path.exists(CONFIG_PATH):
