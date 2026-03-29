@@ -8,7 +8,8 @@ from .state import GameState, Player, Role, GamePhase
 from .agents import AIAgent
 from .announcer import GameAnnouncer
 from . import display
-from .keyboard import HardwareKeyboard
+from .speech import SpeechTranscriber
+
 
 
 class MafiaEngine:
@@ -16,7 +17,7 @@ class MafiaEngine:
         self.fw = fw
         self.state = GameState()
         self.announcer = GameAnnouncer(self.fw)
-        self.keyboard = HardwareKeyboard()
+        self.transcriber = SpeechTranscriber()
         self.agents: dict[str, AIAgent] = {}
         
     def setup_game(self, players: list[Player]):
@@ -115,6 +116,21 @@ class MafiaEngine:
             display.flash_leds(self.fw, 0, 25, 0, count=1) # Confirm
             time.sleep(1)
 
+        # ROLE REVEAL (FORCED MAFIA FOR DEMO)
+        for p in human_players:
+            p.role = Role.MAFIA
+            display.render_main_display(self.fw, self.state, "PRIVATE REVEAL: YOU ARE MAFIA. Press GREEN to hide.")
+            display.set_role_leds(self.fw, p.role) # Secretly set color
+            # Wait for Green Button to dismiss
+            while True:
+                btns = self.fw.read_all_buttons().expect("Buttons fail")
+                if btns.get(ButtonColor.Green, False):
+                    break
+                time.sleep(0.1)
+            display.clear_leds(self.fw)
+            display.render_main_display(self.fw, self.state, "Role Hidden.")
+            time.sleep(1)
+
         # Take a group photo/video for spatial context
         self.announcer.speak("Everyone, please stand in the frame together for a group scan.")
         display.render_main_display(self.fw, self.state, "GROUP SCAN...")
@@ -125,6 +141,37 @@ class MafiaEngine:
         self.announcer.speak("Registration complete. Let the games begin.")
         display.render_main_display(self.fw, self.state, "Ready to Play")
         time.sleep(2)
+
+    def _get_human_speech(self, p: Player, prompt_msg: str) -> str:
+        """Hande PTT (Push-To-Talk) logic for human players."""
+        display.render_main_display(self.fw, self.state, f"HOLD [GREEN]: {prompt_msg}", active_player=p)
+        
+        # Wait for Press
+        while True:
+            btns = self.fw.read_all_buttons().expect("Buttons fail")
+            if btns.get(ButtonColor.Green, False):
+                break
+            time.sleep(0.1)
+            
+        # Start Recording
+        wav_remote = f"/temp/speech_{int(time.time())}.wav"
+        self.fw.record_audio(wav_remote)
+        
+        # Wait for Release
+        while True:
+            btns = self.fw.read_all_buttons().expect("Buttons fail")
+            if not btns.get(ButtonColor.Green, False):
+                break
+            time.sleep(0.1)
+            
+        # Stop Recording (Assume a newline or next command stops it)
+        time.sleep(0.2)
+        
+        # Download and Transcribe
+        local_wav = f"temp_human_{p.name}.wav"
+        self.fw.get_file(wav_remote, local_wav)
+        text = self.transcriber.transcribe(local_wav)
+        return text
 
     def run_night_phase(self):
         self.state.phase = GamePhase.NIGHT
@@ -139,9 +186,29 @@ class MafiaEngine:
         mafia_votes = {}
         context = f"Night {self.state.turn}. Alive players: {', '.join(p.name for p in self.state.living_players())}"
         
-        # 1. Mafia Action
-        self.announcer.speak("Mafia, wake up and choose your target for tonight.")
+        # 1. Mafia Action & Deliberation
+        self.announcer.speak("Mafia, wake up. Conspire with your partners.")
         time.sleep(1)
+        
+        # Human Mafia Turn
+        for p in self.state.mafia_players():
+            if not p.is_ai:
+                display.set_role_leds(self.fw, p.role)
+                stmt = self._get_human_speech(p, "Conspire with partner")
+                if stmt:
+                    self.state.log(f"{p.name} (Mafia/Human): {stmt}")
+                    # AI Mafia reaction
+                    mafia_partners = [x for x in self.state.mafia_players() if x.is_ai]
+                    for partner in mafia_partners:
+                        display.render_main_display(self.fw, self.state, "Thinking...", active_player=partner)
+                        res = self.agents[partner.name].react_to_event(f"Partner {p.name} said: {stmt}")
+                        reply = res.get("public_statement", "")
+                        if reply:
+                            self.state.log(f"{partner.name} (Mafia/AI): {reply}")
+                            display.render_main_display(self.fw, self.state, f"'{reply}'", active_player=partner)
+                            self.announcer.speak(reply, partner.voice_id)
+                display.clear_leds(self.fw)
+
         for p in self.state.mafia_players():
             if not p.is_ai: continue
             display.set_role_leds(self.fw, p.role)
@@ -221,43 +288,42 @@ class MafiaEngine:
             self.state.log("No one died in the night.")
             self.announcer.announce_no_death()
 
-    def run_day_discussion(self, rounds: int = 1):
+    def run_day_discussion(self, rounds: int = 5):
         context = f"Day {self.state.turn} begins. Players alive: {', '.join(p.name for p in self.state.living_players())}"
         
-        for _ in range(rounds):
+        for r_idx in range(rounds):
+            self.state.log(f"--- Round {r_idx + 1} of Discussion ---")
+            # Reset turns for the day is done once at the start of phase, 
+            # but user wants 5 rounds of talking. 
+            # Let's assume 1 talk per round per player.
+            
             speakers = self.state.living_players()
             random.shuffle(speakers)
             
             for p in speakers:
                 # Check talk budget
                 if p.talk_count >= 5:
-                    self.state.log(f"{p.name} has exhausted their talk budget.")
                     continue
 
                 if not p.is_ai:
-                    # Human turn
                     display.set_role_leds(self.fw, p.role)
-                    display.render_main_display(self.fw, self.state, f"YOUR TURN: {p.name}", active_player=p)
-                    self.announcer.speak(f"{p.name}, it is your turn to speak.")
-                    
-                    statement = self.keyboard.get_input(self.fw, f"TYPE STATEMENT ({p.talk_count+1}/5)")
+                    # Human turn using PTT
+                    statement = self._get_human_speech(p, f"Discussion ({p.talk_count+1}/5)")
                     p.talk_count += 1
                     
                     if statement:
                         self.state.log(f"{p.name} (Human): {statement}")
                         display.render_main_display(self.fw, self.state, f"'{statement}'", active_player=p)
-                        # We don't speak for humans usually, or we can use a default voice?
-                        # The user said "the names of the agents are displayed... when they speak"
-                        # I'll speak it back for clarity if ElevenLabs/Gemini needs it in history
                         self.announcer.speak(statement)
                     time.sleep(1)
                     display.clear_leds(self.fw)
                     continue
                     
+                # AI turn
                 display.render_main_display(self.fw, self.state, f"Composing statement...", active_player=p)
                 agent = self.agents[p.name]
                 
-                # Collect human transcripts for AI context (simplified)
+                # Collect human transcripts for AI context
                 human_transcript = "\n".join([f"{e.message}" for e in self.state.game_log if "Human" in e.message])
                 result = agent.day_discussion(context, transcript=human_transcript)
                 
@@ -270,9 +336,13 @@ class MafiaEngine:
                     display.set_role_leds(self.fw, p.role)
                     display.render_main_display(self.fw, self.state, f"'{statement}'", active_player=p)
                     self.announcer.speak(statement, p.voice_id)
-                time.sleep(2)
+                time.sleep(1)
                 display.clear_leds(self.fw)
                 
+        # Discussion ends
+        self.resolve_votes()
+        if not self.state.winner:
+            self.run_night_phase()
         # Run visual countdown to indicate discussion ending
         self.announcer.speak("Time is running out. Ten seconds remain.")
         display.run_led_countdown(self.fw, 10)
