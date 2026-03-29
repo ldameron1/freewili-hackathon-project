@@ -41,19 +41,10 @@ ROLE_INSTRUCTIONS = {
 }
 
 MODELS_FALLBACK = [
-    # High-Quota (500 RPD / 15 RPM)
-    "models/gemini-3.1-flash-lite",
-    "models/gemini-2.5-flash-lite",
-    "models/gemini-2.0-flash-lite",
-    # Low-Quota (20 RPD / 5 RPM) - Fallback
     "models/gemini-2.5-flash",
+    "models/gemini-3.1-flash-lite-preview",
     "models/gemini-2.0-flash",
-    "models/gemini-flash-latest",
-    # Gemma Fallbacks
-    "models/gemma-3-27b-it",
-    "models/gemma-3-12b-it",
-    "models/gemma-3-4b-it",
-    "models/gemma-3-1b-it",
+    "models/gemini-1.5-flash",
 ]
 
 GLOBAL_MODEL_INDEX = 0

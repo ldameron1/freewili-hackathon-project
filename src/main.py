@@ -104,6 +104,13 @@ def wait_for_menu_selection(fw: FreeWili) -> str:
 
 def main():
     print("Main script starting...")
+    # Automatic Port Clearing
+    try:
+        os.system("sudo fuser -k /dev/ttyACM0 > /dev/null 2>&1")
+        os.system("sudo fuser -k /dev/ttyACM1 > /dev/null 2>&1")
+    except:
+        pass
+        
     load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-menu", action="store_true")
@@ -139,6 +146,9 @@ def main():
         threading.Thread(target=start_flask, args=(engine,), daemon=True).start()
         
         engine.setup_game(players)
+        
+        # Introduction Phase
+        engine.run_intro_phase()
         
         # Registration (skipped in debug)
         if mode != "debug":

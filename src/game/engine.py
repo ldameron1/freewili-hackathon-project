@@ -115,6 +115,26 @@ class MafiaEngine:
         display.render_main_display(self.fw, self.state, "Ready to Play")
         time.sleep(2)
 
+    def run_intro_phase(self):
+        """Allow each player to introduce themselves."""
+        self.state.phase = GamePhase.LOBBY
+        self.state.log("Starting Introduction Phase")
+        self.announcer.speak("Before we begin, let everyone introduce themselves.")
+        time.sleep(1)
+
+        for p in self.state.players:
+            display.render_main_display(self.fw, self.state, f"Intro: {p.name}", active_player=p)
+            if p.is_ai:
+                intro_msg = f"Hello, I am {p.name}. {p.personality}"
+                self.state.log(f"{p.name}: {intro_msg}")
+                self.announcer.speak(intro_msg, p.voice_id)
+            else:
+                self.announcer.speak(f"{p.name}, please introduce yourself to the group.")
+                stmt = self._get_human_speech(p, "Introduce yourself")
+                if stmt:
+                    self.state.log(f"{p.name} (Human): {stmt}")
+            time.sleep(0.5)
+
     def _get_human_speech(self, p: Player, prompt_msg: str) -> str:
         """Hande PTT (Push-To-Talk) logic for human players."""
         display.render_main_display(self.fw, self.state, f"HOLD [GREEN]: {prompt_msg}", active_player=p)
@@ -124,26 +144,67 @@ class MafiaEngine:
             btns = self.fw.read_all_buttons().expect("Buttons fail")
             if btns.get(ButtonColor.Green, False):
                 break
-            time.sleep(0.1)
+            time.sleep(0.05)
             
         # Start Recording
-        wav_remote = f"/temp/speech_{int(time.time())}.wav"
-        self.fw.record_audio(wav_remote)
+        # SET LEDS TO WHITE TO INDICATE RECORDING
+        for i in range(7):
+            self.fw.set_board_leds(i, 20, 20, 20)
+            
+        # Use a fixed duration if record_audio doesn't stop automatically on button release
+        # FreeWili record_audio usually takes a filename and duration (seconds)
+        wav_remote = f"speech_{p.name}.wav"
+        print(f"[Speech] Recording 5 seconds to remote: {wav_remote}")
+        try:
+            # Note: We record for a fixed 5s to be safe, or until button release
+            # if we find a way to stop it. 
+            self.fw.record_audio(wav_remote, 5.0)
+        except Exception as e:
+            print(f"[Speech Error] record_audio call failed: {e}")
         
-        # Wait for Release
-        while True:
+        # Wait for Release OR 5 seconds
+        start_rec = time.time()
+        while time.time() - start_rec < 5.0:
             btns = self.fw.read_all_buttons().expect("Buttons fail")
             if not btns.get(ButtonColor.Green, False):
                 break
             time.sleep(0.1)
             
-        # Stop Recording (Assume a newline or next command stops it)
-        time.sleep(0.2)
+        # CLEAR LEDS AFTER RECORDING
+        display.clear_leds(self.fw)
+        
+        # CRITICAL: Wait for device to finalize the file. 
+        # The 'division by zero' usually means the file is 0 bytes or locked.
+        print("[Speech] Waiting for device to finalize file...")
+        time.sleep(2.0)
         
         # Download and Transcribe
         local_wav = f"temp_human_{p.name}.wav"
-        self.fw.get_file(wav_remote, local_wav)
+        if os.path.exists(local_wav): 
+            try: os.remove(local_wav)
+            except: pass
+        
+        print(f"[Speech] Fetching {wav_remote} to {local_wav}...")
+        # Give the device a moment to close the file handle after recording stops
+        try:
+            # We use a 15s timeout for the serial transfer
+            self.fw.get_file(wav_remote, local_wav)
+        except Exception as e:
+            print(f"[Speech Error] get_file failed: {e}")
+        
+        # Wait up to 7 seconds for the file to appear on the laptop
+        start_wait = time.time()
+        while not os.path.exists(local_wav) and time.time() - start_wait < 7:
+            time.sleep(0.5)
+            
+        if not os.path.exists(local_wav) or os.path.getsize(local_wav) == 0:
+            print(f"[Speech Error] File {local_wav} not found or empty.")
+            return "[Recording failed or silent]"
+            
         text = self.transcriber.transcribe(local_wav)
+        if not text or text == "[Error transcribing]":
+            return "[Transcription error]"
+            
         return text
 
     def run_night_phase(self):
