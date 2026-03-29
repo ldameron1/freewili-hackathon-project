@@ -34,10 +34,39 @@ class HardwareRenderer:
             self.font_small = ImageFont.load_default()
 
     def _convert_and_get_path(self, img, name):
-        png_path = self.temp_dir / f"{name}.png"
+        import struct
         fwi_path = self.temp_dir / f"{name}.fwi"
-        img.save(png_path)
-        fwi_image.convert(png_path, fwi_path)
+        
+        # HEADER section of FreeWili image
+        header = bytearray(b"FW01IMG\x00")
+        header.extend(struct.pack("<I", 1)) # Flags
+        header.extend(struct.pack("<I", WIDTH * HEIGHT)) # Total pixels
+        header.extend(struct.pack("<h", WIDTH)) # Width
+        header.extend(struct.pack("<h", HEIGHT)) # Height
+        header.extend(struct.pack("<h", 0)) # TransColor
+        header.extend(struct.pack("<h", 0)) # ID
+        
+        # Optimised Pixel Buffer
+        pixel_data = bytearray()
+        pixels = img.load()
+        
+        for h in range(HEIGHT):
+            for w in range(WIDTH):
+                r, g, b = pixels[w, h]
+                # Convert to RGB565 (5-bit Red, 6-bit Green, 5-bit Blue)
+                r5 = (r * 31) // 255
+                g6 = (g * 63) // 255
+                b5 = (b * 31) // 255
+                rgb = (r5 << 11) | (g6 << 5) | b5
+                # Byte swap for little-endian hardware storage if needed
+                # (FWI actually expects Big-Endian in its pixel layout: HI, LO)
+                rgb_swapped = ((rgb << 8) & 0xFF00) | ((rgb >> 8) & 0x00FF)
+                pixel_data.extend(struct.pack("<H", rgb_swapped))
+        
+        with open(fwi_path, "wb") as f:
+            f.write(header)
+            f.write(pixel_data)
+            
         return str(fwi_path)
 
     def render_game_screen(self, title, items, turn_info="DAY 1"):
