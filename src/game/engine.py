@@ -8,6 +8,7 @@ from .state import GameState, Player, Role, GamePhase
 from .agents import AIAgent
 from .announcer import GameAnnouncer
 from . import display
+from .keyboard import HardwareKeyboard
 
 
 class MafiaEngine:
@@ -15,6 +16,7 @@ class MafiaEngine:
         self.fw = fw
         self.state = GameState()
         self.announcer = GameAnnouncer(self.fw)
+        self.keyboard = HardwareKeyboard()
         self.agents: dict[str, AIAgent] = {}
         
     def setup_game(self, players: list[Player]):
@@ -159,7 +161,7 @@ class MafiaEngine:
         for p in [x for x in self.state.living_players() if x.role == Role.DETECTIVE]:
             if not p.is_ai: continue
             display.set_role_leds(self.fw, p.role)
-            display.render_main_display(self.fw, self.state, "Thinking...", active_player=p)
+            display.render_main_display(self.fw, self.state, "Investigating suspects...", active_player=p)
             result = self.agents[p.name].night_action(context)
             self.state.log(f"[{p.name}/Thought] {result.get('private_thought')}", public=False)
             action = result.get("action", {})
@@ -178,7 +180,7 @@ class MafiaEngine:
         for p in [x for x in self.state.living_players() if x.role == Role.DOCTOR]:
             if not p.is_ai: continue
             display.set_role_leds(self.fw, p.role)
-            display.render_main_display(self.fw, self.state, "Thinking...", active_player=p)
+            display.render_main_display(self.fw, self.state, "Choosing who to save...", active_player=p)
             result = self.agents[p.name].night_action(context)
             self.state.log(f"[{p.name}/Thought] {result.get('private_thought')}", public=False)
             action = result.get("action", {})
@@ -227,21 +229,49 @@ class MafiaEngine:
             random.shuffle(speakers)
             
             for p in speakers:
+                # Check talk budget
+                if p.talk_count >= 5:
+                    self.state.log(f"{p.name} has exhausted their talk budget.")
+                    continue
+
                 if not p.is_ai:
+                    # Human turn
+                    display.set_role_leds(self.fw, p.role)
+                    display.render_main_display(self.fw, self.state, f"YOUR TURN: {p.name}", active_player=p)
+                    self.announcer.speak(f"{p.name}, it is your turn to speak.")
+                    
+                    statement = self.keyboard.get_input(self.fw, f"TYPE STATEMENT ({p.talk_count+1}/5)")
+                    p.talk_count += 1
+                    
+                    if statement:
+                        self.state.log(f"{p.name} (Human): {statement}")
+                        display.render_main_display(self.fw, self.state, f"'{statement}'", active_player=p)
+                        # We don't speak for humans usually, or we can use a default voice?
+                        # The user said "the names of the agents are displayed... when they speak"
+                        # I'll speak it back for clarity if ElevenLabs/Gemini needs it in history
+                        self.announcer.speak(statement)
+                    time.sleep(1)
+                    display.clear_leds(self.fw)
                     continue
                     
-                display.render_main_display(self.fw, self.state, f"{p.name} is speaking...")
+                display.render_main_display(self.fw, self.state, f"Composing statement...", active_player=p)
                 agent = self.agents[p.name]
-                result = agent.day_discussion(context)
+                
+                # Collect human transcripts for AI context (simplified)
+                human_transcript = "\n".join([f"{e.message}" for e in self.state.game_log if "Human" in e.message])
+                result = agent.day_discussion(context, transcript=human_transcript)
                 
                 self.state.log(f"[{p.name}/Thought] {result.get('private_thought')}", public=False)
                 statement = result.get('public_statement', '')
                 self.state.log(f"{p.name}: {statement}")
+                p.talk_count += 1
                 
                 if statement:
+                    display.set_role_leds(self.fw, p.role)
                     display.render_main_display(self.fw, self.state, f"'{statement}'", active_player=p)
                     self.announcer.speak(statement, p.voice_id)
                 time.sleep(2)
+                display.clear_leds(self.fw)
                 
         # Run visual countdown to indicate discussion ending
         self.announcer.speak("Time is running out. Ten seconds remain.")

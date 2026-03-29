@@ -63,6 +63,7 @@ class Player:
     personality: str = ""
     face_id: str = ""  # Filename of their reference photo
     voice_profile_id: str = ""  # ElevenLabs or Gemini speaker reference
+    talk_count: int = 0  # Track number of times spoken
 
     @property
     def role_label(self) -> str:
@@ -74,6 +75,7 @@ class Player:
             "role": self.role.value,
             "is_ai": self.is_ai,
             "alive": self.alive,
+            "talk_count": self.talk_count,
         }
 
 

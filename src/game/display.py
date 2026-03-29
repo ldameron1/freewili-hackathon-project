@@ -4,6 +4,10 @@ from freewili import FreeWili
 from freewili.types import FreeWiliProcessorType
 
 from .state import GameState, Role, ROLE_LED_COLORS, Player
+from .render_utils import HardwareRenderer
+
+# Initialize the Noir-Tech Renderer
+renderer = HardwareRenderer()
 
 # ASCII Art Portraits for AI Personalities (Charming Edition)
 ASCII_PHIZ = {
@@ -21,59 +25,36 @@ ASCII_PHIZ = {
 }
 
 def render_main_display(fw: FreeWili, state: GameState, message: str = "", active_player: Player = None) -> None:
-    """Render the current game state to the 320x240 screen."""
-    lines = [
-        f"{state.phase.value.split('_')[0].upper()}-{state.turn}",
-        ""
-    ]
+    """Render the current game state as a Noir-Tech image to the 320x240 screen."""
+    title = f"{state.phase.value.split('_')[0]} : TURN {state.turn}"
     
+    items = []
     if active_player:
-        # Show the face of the active speaker
-        face = ASCII_PHIZ.get(active_player.name, ASCII_PHIZ["Default"])
-        lines.append(f"  {active_player.name} speaks:")
-        for face_line in face:
-            lines.append("    " + face_line)
-        lines.append("")
+        items.append(f"ACTIVE: {active_player.name}")
+        items.append(f"BUDGET: {active_player.talk_count}/5")
         if message:
-            lines.append(">> " + message[:60])
+            # Wrap message or truncate if needed, but for now just show it
+            items.append(message)
     else:
-        alive_count = len(state.living_players())
-        lines.append(f"Players Alive: {alive_count}/{len(state.players)}")
-        lines.append("-" * 30)
- 
-        for p in state.living_players()[:5]:
-            icon = "*" if p.is_ai else "H"
-            lines.append(f"[{icon}] {p.name}")
-            
-        if message:
-            lines.append("")
-            lines.append(">> " + message[:50])
-            
-    # Pad to clear screen
-    while len(lines) < 12:
-        lines.append("")
- 
-    text = "\n".join(lines)
-    text = text.encode('ascii', 'replace').decode('ascii')
-    fw.show_text_display(text, FreeWiliProcessorType.Display)
+        for p in state.living_players()[:6]:
+            status = "[ALIVE]" if p.is_living else "[DEAD]"
+            items.append(f"{p.name} {status}")
+
+    fwi_path = renderer.render_game_screen(title, items, turn_info=f"T{state.turn}")
+    
+    # Upload and Show (Use unique paths to bypass hardware file cache)
+    remote_path = f"/images/g_{int(time.time())}.fwi"
+    fw.send_file(fwi_path, remote_path, processor=FreeWiliProcessorType.Display)
+    fw.show_gui_image(remote_path)
 
 def render_selection_screen(fw: FreeWili, title: str, items: list[str], selected: int) -> None:
-    """Render a vertical selection menu."""
-    lines = [
-        title.upper(),
-        "=" * len(title),
-        ""
-    ]
-    for i, item in enumerate(items):
-        prefix = ">" if i == selected else " "
-        lines.append(f"{prefix}{item[:15]}")
-        
-    lines.append("")
-    lines.append("[W]Up [Y]Down [G]Select")
-    text = "\n".join(lines)
-    text = text.encode('ascii', 'replace').decode('ascii')
+    """Render a premium Noir selection menu as an image."""
+    fwi_path = renderer.render_menu(title, items, selected)
     
-    fw.show_text_display(text, FreeWiliProcessorType.Display)
+    # Upload and Show (Unique paths for menu items)
+    remote_path = f"/images/m_{int(time.time())}.fwi"
+    fw.send_file(fwi_path, remote_path, processor=FreeWiliProcessorType.Display)
+    fw.show_gui_image(remote_path)
 
 def set_role_leds(fw: FreeWili, role: Role) -> None:
     """Set all LEDs to the role color."""
