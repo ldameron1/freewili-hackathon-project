@@ -306,9 +306,10 @@ The FREE-WiLi's RP2040 is constrained by 264KB of RAM, but the **WilEye Camera M
 
 ### Milestone: The WilEye RAM-Hack (March 28, 2026)
 *   **The Problem**: The RP2040 and ESP32 sub-modules were experiencing buffer overflows during concurrent Camera and Audio Flash-writes.
-*   **The Hack**: Discovered that setting the WilEye (ESP32-S3) resolution to **QVGA (320x240)** or lower via the `e\c\y` command frees up ~7MB of PSRAM otherwise reserved for the 1080p frame buffer.
-*   **The Fix**: Repurposed this 'spare' PSRAM as a massive filesystem cache and LLM conversation buffer.
-*   **Trade-off**: Camera quality reduced by 4x, but system stability increased by 10x. This is the 'Gold Master' configuration for the hackathon competition.
+*   **The Brown-Out Discovery (Critical)**: When the WilEye is stressed to 1080p and attempting heavy I/O, it pulls enough instantaneous current to "brown out" the Bottlenose (WiFi) ESP32 chip on the shared power rail, dropping network connectivity.
+*   **The Hack**: Discovered that setting the WilEye (ESP32-S3) resolution to **QVGA (320x240)** or lower via the `e\c\y 0` command reduces both power draw and memory pressure. It frees up ~7MB of PSRAM otherwise reserved for the 1080p frame buffer.
+*   **The Fix**: Repurposed this 'spare' PSRAM as a massive filesystem cache and LLM conversation buffer. The lower power draw keeps the WiFi chip stable.
+*   **Trade-off**: Camera quality reduced by 4x, but system stability increased by 10x. This is the **required** 'Gold Master' configuration for any Standalone WiFi usage.
 
 ### Next Steps for Future Iterations:
 1.  **WiFi Standalone**: Migrate the API relay logic onto the Bottlenose ESP32 module itself.
