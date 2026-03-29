@@ -24,6 +24,17 @@ class SpeechTranscriberTests(unittest.TestCase):
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False)
     @patch.object(speech_module.genai, "Client")
+    def test_transcriber_configures_client_timeout(self, mock_client_cls):
+        mock_client_cls.return_value = self.build_client([types.SimpleNamespace(text="ignored")])
+
+        SpeechTranscriber()
+
+        _, kwargs = mock_client_cls.call_args
+        self.assertEqual(kwargs["api_key"], "test-key")
+        self.assertEqual(kwargs["http_options"].timeout, speech_module.DEFAULT_HTTP_TIMEOUT_MS)
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False)
+    @patch.object(speech_module.genai, "Client")
     def test_transcribe_sends_uploaded_audio_as_file_part(self, mock_client_cls):
         client = self.build_client([types.SimpleNamespace(text="hello from audio")])
         mock_client_cls.return_value = client
@@ -63,6 +74,10 @@ class SpeechTranscriberTests(unittest.TestCase):
         second_call = client.models.generate_content.call_args_list[1].kwargs
         self.assertEqual(first_call["model"], speech_module.MODELS_FALLBACK[0])
         self.assertEqual(second_call["model"], speech_module.MODELS_FALLBACK[1])
+
+    def test_is_recoverable_error_treats_timeouts_as_retryable(self):
+        self.assertTrue(SpeechTranscriber._is_recoverable_error("Request timed out"))
+        self.assertTrue(SpeechTranscriber._is_recoverable_error("Gateway timeout"))
 
 
 if __name__ == "__main__":

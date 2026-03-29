@@ -3,6 +3,8 @@ import os
 from google import genai
 from google.genai import types
 
+DEFAULT_HTTP_TIMEOUT_MS = int(os.environ.get("GEMINI_HTTP_TIMEOUT_MS", "30000"))
+
 MODELS_FALLBACK = [
     "models/gemini-2.5-flash",
     "models/gemini-2.0-flash",
@@ -31,13 +33,27 @@ class SpeechTranscriber:
         self.api_key = os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             print("[Speech] Warning: GEMINI_API_KEY not found in environment.")
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = genai.Client(
+            api_key=self.api_key,
+            http_options=types.HttpOptions(timeout=DEFAULT_HTTP_TIMEOUT_MS),
+        )
         self.model_index = 0
 
     @staticmethod
     def _looks_like_prompt_echo(text: str) -> bool:
         normalized = " ".join(text.lower().split())
         return any(snippet in normalized for snippet in _PROMPT_ECHO_SNIPPETS)
+
+    @staticmethod
+    def _is_recoverable_error(error_str: str) -> bool:
+        lower = error_str.lower()
+        return (
+            ("429" in error_str and "quota" in lower)
+            or "empty transcription response" in lower
+            or "prompt echo response" in lower
+            or "timeout" in lower
+            or "timed out" in lower
+        )
 
     @staticmethod
     def _audio_part(audio_file):
@@ -52,12 +68,19 @@ class SpeechTranscriber:
             return "[No API Key]"
         audio_file = None
         try:
-            print(f"[Speech] Transcribing {wav_path}...")
+            size_bytes = os.path.getsize(wav_path) if os.path.exists(wav_path) else 0
+            print(
+                f"[Speech] Transcribing {wav_path} "
+                f"({size_bytes} bytes, timeout={DEFAULT_HTTP_TIMEOUT_MS}ms)..."
+            )
+            print("[Speech] Uploading audio to Gemini...")
             audio_file = self.client.files.upload(file=wav_path)
+            print(f"[Speech] Upload complete: {audio_file.name}")
 
             for _ in range(len(MODELS_FALLBACK)):
                 try:
                     model_name = MODELS_FALLBACK[self.model_index]
+                    print(f"[Speech] Requesting transcript from {model_name}...")
                     response = self.client.models.generate_content(
                         model=model_name,
                         contents=[self._audio_part(audio_file)],
@@ -76,11 +99,7 @@ class SpeechTranscriber:
                     return text
                 except Exception as e:
                     error_str = str(e)
-                    recoverable = (
-                        ("429" in error_str and "quota" in error_str.lower())
-                        or "empty transcription response" in error_str.lower()
-                        or "prompt echo response" in error_str.lower()
-                    )
+                    recoverable = self._is_recoverable_error(error_str)
                     if recoverable:
                         self.model_index += 1
                         if self.model_index < len(MODELS_FALLBACK):
