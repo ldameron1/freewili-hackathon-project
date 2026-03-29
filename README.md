@@ -1,4 +1,4 @@
-Note: This repository is entirely vibe-coded, and the read me is out of date (currently only 1 human player is implemented, and some features were cut for time like the camera integration.)
+Note: This repository is entirely vibe-coded, and the read me is out of date (currently only 1 human player is implemented, and some features were cut for time like the camera integration and wristbands.)
 
 # 🎭 AI Integrated Social Intrigue Game(s) for FREE-WILi
 
