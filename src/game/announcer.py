@@ -97,6 +97,7 @@ class GameAnnouncer:
             remote_name = f"tts_{'a' if self.toggle == 0 else 'b'}.wav"
             remote_path = f"/sounds/{remote_name}"
 
+            # FREE-WILi firmware accepted upload to /sounds but playback by basename only.
             self.fw.send_file(str(TMP_TTS_PATH), remote_path, processor=FreeWiliProcessorType.Display).expect(
                 "Upload fail"
             )

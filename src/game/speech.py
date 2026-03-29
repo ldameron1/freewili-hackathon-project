@@ -1,12 +1,14 @@
-"""Placeholder for Gemini speech recognition using generateContent with audio part."""
+"""Speech recognition via Gemini audio transcription."""
 import os
 from google import genai
-from google.genai import types
 
 MODELS_FALLBACK = [
-    "models/gemini-2.5-flash-lite",
-    "models/gemini-3.1-flash-lite-preview",
+    "models/gemini-2.5-flash",
     "models/gemini-2.0-flash",
+    "models/gemini-2.5-flash-lite",
+    "models/gemini-flash-latest",
+    "models/gemini-flash-lite-latest",
+    "models/gemini-3.1-flash-lite-preview",
     "models/gemini-1.5-flash",
 ]
 
@@ -22,9 +24,9 @@ class SpeechTranscriber:
         """Uploads WAV file and extracts spoken text."""
         if not self.api_key:
             return "[No API Key]"
+        audio_file = None
         try:
             print(f"[Speech] Transcribing {wav_path}...")
-            # For hackathon, we could use the File API
             audio_file = self.client.files.upload(file=wav_path)
             
             for attempt in range(len(MODELS_FALLBACK)):
@@ -37,7 +39,9 @@ class SpeechTranscriber:
                             audio_file
                         ]
                     )
-                    text = response.text.strip()
+                    text = (response.text or "").strip()
+                    if not text:
+                        raise ValueError(f"Empty transcription response from {model_name}")
                     print(f"[Speech] Result ({model_name}): {text}")
                     return text
                 except Exception as e:
@@ -52,3 +56,9 @@ class SpeechTranscriber:
         except Exception as e:
             print(f"[Speech Error] {e}")
             return "[Error transcribing]"
+        finally:
+            if audio_file is not None:
+                try:
+                    self.client.files.delete(name=audio_file.name)
+                except Exception:
+                    pass

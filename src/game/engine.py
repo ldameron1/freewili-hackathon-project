@@ -2,9 +2,11 @@
 import time
 import random
 import os
+import struct
+import wave
 
 from freewili import FreeWili
-from freewili.types import ButtonColor
+from freewili.types import AudioData, ButtonColor, EventType
 from .state import GameState, Player, Role, GamePhase
 from .agents import AIAgent
 from .announcer import GameAnnouncer
@@ -46,7 +48,7 @@ class MafiaEngine:
         self.state.log("Skipping wristband setup.")
 
     def run_registration_phase(self):
-        """Register human players with photo and voice ID."""
+        """Register human players without camera or wristband dependencies."""
         human_players = [p for p in self.state.players if not p.is_ai]
         if not human_players:
             return
@@ -59,14 +61,10 @@ class MafiaEngine:
 
         for p in human_players:
             display.render_main_display(self.fw, self.state, f"Registering: {p.name}")
-            self.announcer.speak(f"{p.name}, please stand in front of the camera and stay still.")
-            time.sleep(3)
-            
-            # Take photo
-            photo_file = f"face_{p.name}.jpg"
-            self.fw.wileye_take_picture(0, photo_file)
-            p.face_id = photo_file
-            self.state.log(f"Captured face reference for {p.name}: {photo_file}")
+            self.announcer.speak(f"{p.name}, get ready to say your name and a short sentence.")
+            time.sleep(1)
+            p.face_id = ""
+            self.state.log(f"Skipping camera capture for {p.name}")
             
             # Record audio snippet for voice diarization
             self.announcer.speak("Now, please say your name and a short sentence.")
@@ -93,23 +91,16 @@ class MafiaEngine:
         for p in human_players:
             p.role = Role.MAFIA
             display.render_main_display(self.fw, self.state, "PRIVATE REVEAL: YOU ARE MAFIA. Press GREEN to hide.")
-            display.set_role_leds(self.fw, p.role) # Secretly set color
             # Wait for Green Button to dismiss
             while True:
                 btns = self.fw.read_all_buttons().expect("Buttons fail")
                 if btns.get(ButtonColor.Green, False):
                     break
                 time.sleep(0.1)
-            display.clear_leds(self.fw)
             display.render_main_display(self.fw, self.state, "Role Hidden.")
             time.sleep(1)
 
-        # Take a group photo/video for spatial context
-        self.announcer.speak("Everyone, please stand in the frame together for a group scan.")
-        display.render_main_display(self.fw, self.state, "GROUP SCAN...")
-        time.sleep(2)
-        self.fw.wileye_take_picture(0, "group_spatial.jpg")
-        self.state.log("Group spatial scan complete.")
+        self.state.log("Skipping group camera scan.")
         
         self.announcer.speak("Registration complete. Let the games begin.")
         display.render_main_display(self.fw, self.state, "Ready to Play")
@@ -144,7 +135,6 @@ class MafiaEngine:
             time.sleep(1.0)
             return self.transcriber.transcribe("final_captured_proof.wav")
 
-        from freewili.types import FreeWiliProcessorType
         display.render_main_display(self.fw, self.state, f"HOLD [GREEN]: {prompt_msg}", active_player=p)
         
         # Wait for Press
@@ -157,55 +147,76 @@ class MafiaEngine:
         # Start Recording
         for i in range(7):
             self.fw.set_board_leds(i, 20, 20, 20)
-            
-        try:
-            self.fw.enable_audio_events(True, processor=FreeWiliProcessorType.Main)
-        except: pass
 
-        wav_remote = f"/sp_{p.name}.wav" # Absolute root path
-        print(f"[Speech] Recording to MAIN: {wav_remote}")
-        
-        if self.fw.main_serial:
-            self.fw.main_serial.record_audio(wav_remote)
+        captured_audio: list[list[int]] = []
+
+        def event_handler(event_type, _frame, data):
+            if event_type == EventType.Audio and isinstance(data, AudioData):
+                captured_audio.append(data.data)
+
+        self.fw.set_event_callback(event_handler)
+        try:
+            self.fw.enable_audio_events(True).expect("Audio events fail")
+        except Exception as e:
+            print(f"[Speech Error] enable_audio_events: {e}")
+            display.clear_leds(self.fw)
+            self.fw.set_event_callback(None)
+            return "[Mic Error]"
+
+        print("[Speech] Recording from DISPLAY audio events...")
         
         # Wait for Release OR 5 seconds
         start_rec = time.time()
         while time.time() - start_rec < 5.0:
+            try:
+                self.fw.process_events()
+            except Exception as e:
+                print(f"[Speech Error] process_events: {e}")
             btns = self.fw.read_all_buttons().expect("Buttons fail")
             if not btns.get(ButtonColor.Green, False):
                 break
-            time.sleep(0.05)
-            
+            if time.time() - start_rec < 0.35:
+                captured_audio.clear()
+            time.sleep(0.02)
+
         try:
-            if self.fw.main_serial:
-                self.fw.main_serial.serial_port.send("\n")
-                time.sleep(0.1)
-        except: pass
+            self.fw.enable_audio_events(False).expect("Disable audio events fail")
+        except Exception:
+            pass
+        self.fw.set_event_callback(None)
 
         display.clear_leds(self.fw)
         print("[Speech] Finalizing...")
-        time.sleep(2.0)
+        time.sleep(0.2)
         
-        local_wav = f"temp_human_{p.name}.wav"
+        safe_name = "".join(ch if ch.isalnum() else "_" for ch in p.name.lower())
+        local_wav = f"/tmp/temp_human_{safe_name}.wav"
         if os.path.exists(local_wav): 
             try: os.remove(local_wav)
             except: pass
-        
-        try:
-            if self.fw.main_serial:
-                import pathlib
-                res = self.fw.main_serial.get_file(wav_remote, pathlib.Path(local_wav), None)
-        except Exception as e:
-            print(f"[Speech Error] get_file: {e}")
-        
-        start_wait = time.time()
-        while not os.path.exists(local_wav) and time.time() - start_wait < 5:
-            time.sleep(0.5)
-            
-        if not os.path.exists(local_wav) or os.path.getsize(local_wav) == 0:
+
+        if not captured_audio:
             return "[Recording failed or silent]"
-            
-        return self.transcriber.transcribe(local_wav)
+
+        try:
+            with wave.open(local_wav, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(8000)
+                for chunk in captured_audio:
+                    audio_bytes = b"".join(struct.pack("<h", sample) for sample in chunk)
+                    wav_file.writeframes(audio_bytes)
+        except Exception as e:
+            print(f"[Speech Error] writing wav: {e}")
+            return "[Recording failed or silent]"
+
+        if os.path.getsize(local_wav) == 0:
+            return "[Recording failed or silent]"
+
+        transcript = self.transcriber.transcribe(local_wav)
+        if not transcript or transcript == "[Error transcribing]":
+            return "[Transcription error]"
+        return transcript
 
     def run_night_phase(self):
         self.state.phase = GamePhase.NIGHT

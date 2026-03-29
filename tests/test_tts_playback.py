@@ -50,6 +50,7 @@ def build_freewili_samples(audio_bytes: bytes, gain: float = 1.8) -> list[int]:
     return pad + downsampled + pad
 
 
+
 def main():
     parser = argparse.ArgumentParser(description="Test ElevenLabs TTS → FREE-WiLi playback")
     parser.add_argument("--text", default="The town awakens. Night has fallen, and someone has been eliminated.",
@@ -135,7 +136,6 @@ def main():
         upload_start = time.time()
         result = fw.send_file(tmp_path, remote_target, processor=FreeWiliProcessorType.Display)
         upload_time = time.time() - upload_start
-
         if result.is_ok():
             log(f"✅ Upload complete in {upload_time:.1f}s")
         else:

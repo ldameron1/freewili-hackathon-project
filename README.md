@@ -97,6 +97,70 @@ sudo ./venv/bin/python3 src/main.py --skip-menu
 
 ---
 
+## FREE-WILi Audio Rules
+
+These are the working rules for audio on this project. Do not deviate from them unless you re-verify on hardware.
+
+1. Build playback WAVs as `8 kHz`, `mono`, `16-bit PCM`.
+2. Upload audio files to the Display processor under `/sounds/`.
+3. Play audio by basename only.
+
+Working example:
+
+```python
+fw.send_file("/tmp/freewili_tone.wav", "/sounds/tone.wav", processor=FreeWiliProcessorType.Display, chunk_size=4096)
+fw.play_audio_file("tone.wav", processor=FreeWiliProcessorType.Display)
+```
+
+Non-working pattern seen during debugging:
+
+```python
+fw.play_audio_file("/sounds/tone.wav", processor=FreeWiliProcessorType.Display)
+```
+
+Additional rules:
+
+1. Keep filenames within the SDK's 8.3 filename expectation.
+2. If upload stalls, retry with smaller `send_file(..., chunk_size=4096)` and then `2048`.
+3. Kill stale Python processes before hardware tests:
+
+```bash
+sudo pkill -9 -f 'src/main.py|hardware_tone_test.py|cleanup_hw.py|test_tts_playback.py|tests/test_tts_playback.py'
+```
+
+Canonical code paths in this repo:
+
+1. `hardware_tone_test.py`
+2. `src/game/announcer.py`
+3. `tests/test_tts_playback.py`
+
+---
+
+## Speech-To-Text Notes
+
+Current STT path:
+
+1. human holds `GREEN`
+2. `src/game/engine.py` captures mic samples from FREE-WILi Display audio events
+3. audio is written to `/tmp/temp_human_<name>.wav`
+4. `src/game/speech.py` uploads that WAV to Gemini and requests transcription
+
+In principle, yes: Gemini STT should work with the current design.
+
+What must be true:
+
+1. `GEMINI_API_KEY` is present
+2. FREE-WILi audio events are actually arriving during button-held capture
+3. the captured WAV is non-empty and valid
+4. Gemini model quota/rate limits are not blocking the request
+
+The main known bug that was removed:
+
+1. old capture path used `get_file()` after on-device recording and failed with `division by zero`
+2. current path avoids that by streaming audio events locally instead
+
+---
+
 ## Controls (FREE-WILi Buttons)
 
 Orient the device with the FREE-WILi logo on top.

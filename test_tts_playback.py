@@ -23,7 +23,6 @@ def build_freewili_samples(audio_bytes: bytes, gain: float = 1.8) -> list[int]:
         downsampled[-(index + 1)] = int(downsampled[-(index + 1)] * fade)
     pad = [0] * int(8000 * 0.15)
     return pad + downsampled + pad
-
 def test_tts():
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     client = ElevenLabs(api_key=api_key)
