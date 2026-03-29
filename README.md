@@ -1,3 +1,5 @@
+Note: This repository is entirely vibe-coded.
+
 # 🎭 AI Integrated Social Intrigue Game(s) for FREE-WILi
 
 > Turn the [FREE-WILi](https://freewili.com) embedded platform into an AI-powered social deduction game host — where AI agents think, speak, and scheme alongside human players.
