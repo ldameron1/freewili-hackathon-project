@@ -1,60 +1,112 @@
-import sys
+import argparse
 import os
-import time
+from pathlib import Path
+
 from freewili import FreeWili
-from freewili.types import FreeWiliProcessorType
+from freewili.types import FileType, FreeWiliProcessorType
 
-# Canonical files for Gold Master
-GOLD_SOUNDS = [
-    "sfx_gunshot.wav", "sfx_morning_bell.wav", "sfx_night_bell.wav",
-    "sfx_narrator_day_1.wav", "sfx_narrator_game_start.wav",
-    "sfx_narrator_mafia_win.wav", "sfx_narrator_miracle.wav",
-    "sfx_narrator_night_1.wav", "sfx_narrator_town_win.wav",
-    "sfx_narrator_vote_start.wav"
-]
-GOLD_IMAGES = ["menu.fwi", "game_ui.fwi"]
 
-def log(msg):
-    print(f"[CLEANUP] {msg}")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ASSET_DIR = PROJECT_ROOT / "src" / "assets" / "sfx"
 
-def main():
+CANONICAL_SOUND_FILES = {
+    "gunshot.wav",
+    "morning_bell.wav",
+    "night_bell.wav",
+    "narrator_day_1.wav",
+    "narrator_game_start.wav",
+    "narrator_mafia_win.wav",
+    "narrator_miracle.wav",
+    "narrator_night_1.wav",
+    "narrator_town_win.wav",
+    "narrator_vote_start.wav",
+}
+
+TEMP_AUDIO_FILES = {
+    "tone.wav",
+    "tts.wav",
+    "test_tts.wav",
+    "tts_a.wav",
+    "tts_b.wav",
+}
+
+
+def log(message: str) -> None:
+    print(f"[HW] {message}")
+
+
+def list_directory(fw: FreeWili, directory: str) -> list:
+    fw.change_directory(directory, processor=FreeWiliProcessorType.Display).expect(f"Failed to cd {directory}")
+    return fw.list_current_directory(processor=FreeWiliProcessorType.Display).expect(f"Failed to list {directory}").contents
+
+
+def audit_directory(fw: FreeWili, directory: str) -> None:
+    log(f"Listing {directory}")
+    for item in list_directory(fw, directory):
+        if item.name in {".", ".."}:
+            continue
+        suffix = "/" if item.file_type == FileType.Directory else f" ({item.size} bytes)"
+        print(f"  - {directory.rstrip('/')}/{item.name}{suffix}")
+
+
+def purge_temp_audio(fw: FreeWili) -> None:
+    log("Purging temporary audio files from /sounds")
+    for item in list_directory(fw, "/sounds"):
+        if item.file_type != FileType.File:
+            continue
+        if item.name in TEMP_AUDIO_FILES or item.name.startswith("s_"):
+            log(f"  removing /sounds/{item.name}")
+            fw.remove_directory_or_file(item.name, processor=FreeWiliProcessorType.Display).expect(
+                f"Failed to remove {item.name}"
+            )
+
+
+def refresh_assets(fw: FreeWili) -> None:
+    log("Refreshing canonical SFX assets into /sounds")
+    for filename in sorted(CANONICAL_SOUND_FILES):
+        local_path = ASSET_DIR / filename
+        if not local_path.exists():
+            log(f"  skipping missing local asset {local_path}")
+            continue
+        log(f"  uploading {filename}")
+        fw.send_file(str(local_path), f"/sounds/{filename}", processor=FreeWiliProcessorType.Display).expect(
+            f"Failed to upload {filename}"
+        )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Audit and clean FREE-WILi display filesystem")
+    parser.add_argument("--purge-temp-audio", action="store_true", help="Remove tone/tts scratch files from /sounds")
+    parser.add_argument("--refresh-assets", action="store_true", help="Re-upload canonical SFX assets into /sounds")
+    args = parser.parse_args()
+
+    fw = None
     try:
         fw = FreeWili.find_first().expect("No FREE-WILi found")
         fw.open().expect("Failed to open connection")
-        
-        # 1. Clean Display CPU (ESP32)
-        log("Auditing Display CPU (ESP32)...")
-        for dir_path, gold_list in [("/sounds", GOLD_SOUNDS), ("/images", GOLD_IMAGES)]:
-            log(f"Cleaning {dir_path}...")
-            fw.change_directory(dir_path, processor=FreeWiliProcessorType.Display)
-            res = fw.list_current_directory(processor=FreeWiliProcessorType.Display).expect("List failed")
-            
-            for item in res.contents:
-                f = item.name
-                if f not in gold_list:
-                    log(f"  Removing stale file: {dir_path}/{f}")
-                    fw.remove_directory_or_file(f, processor=FreeWiliProcessorType.Display)
-                else:
-                    log(f"  Preserving: {f}")
-        
-        # 2. Re-upload latest assets to be sure
-        log("Refreshing Gold Master assets...")
-        asset_dir = "/home/ld/Pictures/Hackathon/src/assets/sfx"
-        for sfx in GOLD_SOUNDS:
-            local = os.path.join(asset_dir, sfx.replace("sfx_", ""))
-            # Wait, the local filenames don't have sfx_ prefix usually
-            if not os.path.exists(local):
-                 # Try directly
-                 local = os.path.join("/home/ld/Pictures/Hackathon/src/assets/sfx", sfx)
-            
-            if os.path.exists(local):
-                log(f"  Uploading {sfx}...")
-                fw.send_file(local, f"/sounds/{sfx}", processor=FreeWiliProcessorType.Display)
-        
-        log("Cleanup & Installation Complete.")
-        fw.close()
-    except Exception as e:
-        log(f"FATAL: {e}")
+        log(f"Connected to {fw}")
+
+        audit_directory(fw, "/")
+        audit_directory(fw, "/sounds")
+        audit_directory(fw, "/images")
+
+        if args.purge_temp_audio:
+            purge_temp_audio(fw)
+            audit_directory(fw, "/sounds")
+
+        if args.refresh_assets:
+            refresh_assets(fw)
+            audit_directory(fw, "/sounds")
+
+    except Exception as exc:
+        log(f"FATAL: {exc}")
+    finally:
+        if fw is not None:
+            try:
+                fw.close()
+            except Exception:
+                pass
+
 
 if __name__ == "__main__":
     main()

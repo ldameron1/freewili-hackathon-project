@@ -42,9 +42,10 @@ ROLE_INSTRUCTIONS = {
 
 MODELS_FALLBACK = [
     "models/gemini-2.5-flash-lite",
-    "models/gemini-3.1-flash-lite-preview",
+    "models/gemini-2.0-flash-lite",
+    "models/gemini-flash-lite-latest",
+    "models/gemini-2.5-flash",
     "models/gemini-2.0-flash",
-    "models/gemini-1.5-flash",
 ]
 
 GLOBAL_MODEL_INDEX = 0

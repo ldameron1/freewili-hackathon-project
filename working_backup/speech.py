@@ -4,10 +4,9 @@ from google import genai
 from google.genai import types
 
 MODELS_FALLBACK = [
-    "models/gemini-2.5-flash-lite",
-    "models/gemini-3.1-flash-lite-preview",
-    "models/gemini-2.0-flash",
+    "models/gemini-2.5-flash",
     "models/gemini-1.5-flash",
+    # "models/gemini-2.0-flash",
 ]
 
 class SpeechTranscriber:
@@ -23,22 +22,27 @@ class SpeechTranscriber:
         if not self.api_key:
             return "[No API Key]"
         try:
-            print(f"[Speech] Transcribing {wav_path}...")
+            print(f"[Speech] Uploading {wav_path} to Gemini...")
             # For hackathon, we could use the File API
             audio_file = self.client.files.upload(file=wav_path)
+            
+            prompt = "Listen to this audio and provide a highly accurate word-for-word transcription of what the person is saying. Do not include markdown, quotes, or any extra commentary. If there is no speech, output '[Silence]'."
             
             for attempt in range(len(MODELS_FALLBACK)):
                 try:
                     model_name = MODELS_FALLBACK[self.model_index]
                     response = self.client.models.generate_content(
                         model=model_name,
-                        contents=[
-                            "Please transcribe the speech in this audio exactly as you hear it. If there are multiple speakers, identify them as 'Speaker 1:', 'Speaker 2:', etc. If there is no speech, output '[Silence]'.",
-                            audio_file
-                        ]
+                        contents=[prompt, audio_file]
                     )
                     text = response.text.strip()
                     print(f"[Speech] Result ({model_name}): {text}")
+                    
+                    # Clean up the file from Google's servers
+                    try:
+                        self.client.files.delete(name=audio_file.name)
+                    except: pass
+                    
                     return text
                 except Exception as e:
                     error_str = str(e)
