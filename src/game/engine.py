@@ -291,12 +291,11 @@ class MafiaEngine:
     def run_day_discussion(self, rounds: int = 5):
         context = f"Day {self.state.turn} begins. Players alive: {', '.join(p.name for p in self.state.living_players())}"
         
+        # Reset turns for the day
+        self.state.reset_daily_talk_counts()
+        
         for r_idx in range(rounds):
             self.state.log(f"--- Round {r_idx + 1} of Discussion ---")
-            # Reset turns for the day is done once at the start of phase, 
-            # but user wants 5 rounds of talking. 
-            # Let's assume 1 talk per round per player.
-            
             speakers = self.state.living_players()
             random.shuffle(speakers)
             
