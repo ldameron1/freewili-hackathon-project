@@ -18,12 +18,11 @@ import sys
 import time
 import wave
 import argparse
-import math
-import struct
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+from src.game.audio import build_freewili_samples, write_mono_wav
 
 # Load .env from project root
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -32,24 +31,6 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 def log(msg: str) -> None:
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
-
-
-def build_freewili_samples(audio_bytes: bytes, gain: float = 1.8) -> list[int]:
-    """Convert ElevenLabs 16k PCM into the stable FREE-WILi 8k playback format."""
-    pcm16 = struct.unpack(f"{len(audio_bytes) // 2}h", audio_bytes)
-    limited = [int(math.tanh((sample / 32768.0) * gain) * 32767) for sample in pcm16]
-    downsampled = limited[::2]
-
-    fade_len = min(int(8000 * 0.02), len(downsampled))
-    for index in range(fade_len):
-        fade = index / fade_len if fade_len else 1.0
-        downsampled[index] = int(downsampled[index] * fade)
-        downsampled[-(index + 1)] = int(downsampled[-(index + 1)] * fade)
-
-    pad = [0] * int(8000 * 0.15)
-    return pad + downsampled + pad
-
-
 
 def main():
     parser = argparse.ArgumentParser(description="Test ElevenLabs TTS → FREE-WiLi playback")
@@ -94,11 +75,7 @@ def main():
     tmp_path = "/tmp/tts_test.wav"
     try:
         playback_samples = build_freewili_samples(audio_bytes)
-        with wave.open(tmp_path, "wb") as f:
-            f.setnchannels(1)
-            f.setsampwidth(2) # 16-bit
-            f.setframerate(8000)
-            f.writeframes(struct.pack(f"{len(playback_samples)}h", *playback_samples))
+        write_mono_wav(Path(tmp_path), playback_samples)
         log(f"✅ Saved FREE-WILi 8k WAV to {tmp_path}")
     except Exception as e:
         log(f"❌ Failed saving WAV: {e}")

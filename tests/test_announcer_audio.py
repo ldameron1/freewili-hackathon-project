@@ -2,9 +2,11 @@ import importlib
 import os
 import struct
 import sys
+import tempfile
 import types
 import unittest
 import wave
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -27,6 +29,7 @@ sys.modules["freewili"] = mock_fw_module
 sys.modules["freewili.types"] = mock_fw_types_module
 
 announcer_module = importlib.import_module("src.game.announcer")
+audio_module = importlib.import_module("src.game.audio")
 GameAnnouncer = announcer_module.GameAnnouncer
 TMP_TTS_PATH = announcer_module.TMP_TTS_PATH
 
@@ -70,26 +73,28 @@ class GameAnnouncerAudioTests(unittest.TestCase):
         fw = self.build_fw()
         announcer = GameAnnouncer(fw)
 
-        with patch.object(announcer_module.time, "sleep") as sleep_mock:
-            announcer.speak("first line")
-            announcer.speak("second line")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp_tts_path = Path(temp_dir) / "tmp_tts_latest.wav"
+            with patch.object(announcer_module, "TMP_TTS_PATH", tmp_tts_path), patch.object(audio_module.time, "sleep") as sleep_mock:
+                announcer.speak("first line")
+                announcer.speak("second line")
 
-        self.assertEqual(
-            [call.args[1] for call in fw.send_file.call_args_list],
-            ["/sounds/tts_b.wav", "/sounds/tts_a.wav"],
-        )
-        self.assertEqual(
-            [call.args[0] for call in fw.play_audio_file.call_args_list],
-            ["tts_b.wav", "tts_a.wav"],
-        )
+            self.assertEqual(
+                [call.args[1] for call in fw.send_file.call_args_list],
+                ["/sounds/tts_b.wav", "/sounds/tts_a.wav"],
+            )
+            self.assertEqual(
+                [call.args[0] for call in fw.play_audio_file.call_args_list],
+                ["tts_b.wav", "tts_a.wav"],
+            )
 
-        with wave.open(str(TMP_TTS_PATH), "rb") as wav_file:
-            self.assertEqual(wav_file.getframerate(), 8000)
-            self.assertEqual(wav_file.getnchannels(), 1)
+            with wave.open(str(tmp_tts_path), "rb") as wav_file:
+                self.assertEqual(wav_file.getframerate(), 8000)
+                self.assertEqual(wav_file.getnchannels(), 1)
 
-        sleep_values = [call.args[0] for call in sleep_mock.call_args_list]
-        self.assertEqual(sleep_values.count(1.2), 2)
-        self.assertTrue(any(value > 0.5 for value in sleep_values))
+            sleep_values = [call.args[0] for call in sleep_mock.call_args_list]
+            self.assertEqual(sleep_values.count(1.2), 2)
+            self.assertTrue(any(value > 0.5 for value in sleep_values))
 
 
 if __name__ == "__main__":

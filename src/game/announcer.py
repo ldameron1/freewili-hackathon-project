@@ -1,20 +1,23 @@
 """Announcer audio pipeline for FREE-WILi playback."""
-import json
-import math
 import os
-import struct
-import time
-import wave
 from pathlib import Path
 
 from elevenlabs.client import ElevenLabs
 from freewili import FreeWili
-from freewili.types import FreeWiliProcessorType
 
+from .audio import (
+    CANONICAL_SFX_DIR,
+    build_freewili_samples,
+    load_audio_config,
+    play_uploaded_audio,
+    send_and_play_audio,
+    upload_audio,
+    wav_duration_seconds,
+    write_mono_wav,
+)
 from .state import ANNOUNCER_VOICE_ID
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = PROJECT_ROOT / "audio_config.json"
 TMP_TTS_PATH = PROJECT_ROOT / "tmp_tts_latest.wav"
 
 
@@ -25,7 +28,7 @@ class GameAnnouncer:
         self.sample_rate = 8000
         self.gain = 1.8
         self.uploaded_sfx = set()
-        self.sfx_dir = os.path.join(os.path.dirname(__file__), "sfx")
+        self.sfx_dir = str(CANONICAL_SFX_DIR)
         self._load_config()
 
         api_key = os.environ.get("ELEVENLABS_API_KEY")
@@ -36,43 +39,16 @@ class GameAnnouncer:
             self.client = ElevenLabs(api_key=api_key)
 
     def _load_config(self) -> None:
-        if not CONFIG_PATH.exists():
-            return
         try:
-            with CONFIG_PATH.open("r", encoding="ascii") as config_file:
-                config = json.load(config_file)
-            self.sample_rate = 8000 if config.get("sample_rate") != 16000 else 16000
-            self.gain = float(config.get("gain", 1.8))
+            self.sample_rate, self.gain = load_audio_config()
         except Exception as exc:
-            print(f"[TTS] Warning: failed to load {CONFIG_PATH.name}: {exc}")
+            print(f"[TTS] Warning: failed to load audio config: {exc}")
 
     def _build_playback_samples(self, audio_bytes: bytes) -> list[int]:
-        samples = list(struct.unpack(f"{len(audio_bytes) // 2}h", audio_bytes))
-        boosted = [
-            int(math.tanh((sample / 32768.0) * self.gain) * 32767)
-            for sample in samples
-        ]
-
-        if self.sample_rate == 8000:
-            final_samples = boosted[::2]
-        else:
-            final_samples = boosted
-
-        fade_len = min(int(self.sample_rate * 0.02), len(final_samples))
-        for index in range(fade_len):
-            fade_factor = index / fade_len if fade_len else 1.0
-            final_samples[index] = int(final_samples[index] * fade_factor)
-            final_samples[-(index + 1)] = int(final_samples[-(index + 1)] * fade_factor)
-
-        pad_len = int(self.sample_rate * 0.15)
-        return ([0] * pad_len) + final_samples + ([0] * pad_len)
+        return build_freewili_samples(audio_bytes, gain=self.gain, sample_rate=self.sample_rate)
 
     def _write_wav(self, path: Path, samples: list[int]) -> None:
-        with wave.open(str(path), "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(self.sample_rate)
-            wav_file.writeframes(struct.pack(f"{len(samples)}h", *samples))
+        write_mono_wav(path, samples, sample_rate=self.sample_rate)
 
     def speak(self, text: str, voice_id: str = ANNOUNCER_VOICE_ID) -> None:
         if not text.strip():
@@ -95,40 +71,36 @@ class GameAnnouncer:
 
             self.toggle = (self.toggle + 1) % 2
             remote_name = f"tts_{'a' if self.toggle == 0 else 'b'}.wav"
-            remote_path = f"/sounds/{remote_name}"
-
-            # FREE-WILi firmware accepted upload to /sounds but playback by basename only.
-            self.fw.send_file(str(TMP_TTS_PATH), remote_path, processor=FreeWiliProcessorType.Display).expect(
-                "Upload fail"
+            send_and_play_audio(
+                self.fw,
+                TMP_TTS_PATH,
+                remote_name,
+                upload_pause_sec=1.2,
+                playback_duration_sec=len(samples) / float(self.sample_rate),
+                settle_time_sec=0.5,
             )
-            time.sleep(1.2)
-
-            if hasattr(self.fw, "stop_audio"):
-                try:
-                    self.fw.stop_audio(processor=FreeWiliProcessorType.Display)
-                except Exception:
-                    pass
-
-            self.fw.play_audio_file(remote_name, processor=FreeWiliProcessorType.Display).expect("Play fail")
-            time.sleep((len(samples) / float(self.sample_rate)) + 0.5)
         except Exception as exc:
             print(f"[TTS Error] {exc}")
 
     def play_sfx(self, name: str) -> None:
         local_path = os.path.join(self.sfx_dir, f"{name}.wav")
         remote_name = f"s_{name}.wav"
-        remote_path = f"/sounds/{remote_name}"
         if not os.path.exists(local_path):
             return
         try:
             if name not in self.uploaded_sfx:
-                self.fw.send_file(local_path, remote_path, processor=FreeWiliProcessorType.Display).expect("SFX fail")
+                upload_audio(
+                    self.fw,
+                    local_path,
+                    remote_name,
+                    upload_pause_sec=1.0,
+                )
                 self.uploaded_sfx.add(name)
-                time.sleep(1.0)
-            self.fw.play_audio_file(remote_name, processor=FreeWiliProcessorType.Display).expect("SFX play fail")
-            with wave.open(local_path, "rb") as wav_file:
-                duration = wav_file.getnframes() / float(wav_file.getframerate())
-            time.sleep(duration + 0.2)
+            play_uploaded_audio(
+                self.fw,
+                remote_name,
+                playback_duration_sec=wav_duration_seconds(local_path),
+            )
         except Exception as exc:
             print(f"[SFX Error] {exc}")
 

@@ -1,28 +1,13 @@
 import os
-import math
-import struct
 import time
-import wave
 from pathlib import Path
 from dotenv import load_dotenv
 from elevenlabs.client import ElevenLabs
 from freewili import FreeWili
 from freewili.types import FreeWiliProcessorType
+from src.game.audio import build_freewili_samples, write_mono_wav
 
 load_dotenv()
-
-
-def build_freewili_samples(audio_bytes: bytes, gain: float = 1.8) -> list[int]:
-    pcm16 = struct.unpack(f"{len(audio_bytes)//2}h", audio_bytes)
-    limited = [int(math.tanh((sample / 32768.0) * gain) * 32767) for sample in pcm16]
-    downsampled = limited[::2]
-    fade_len = min(int(8000 * 0.02), len(downsampled))
-    for index in range(fade_len):
-        fade = index / fade_len if fade_len else 1.0
-        downsampled[index] = int(downsampled[index] * fade)
-        downsampled[-(index + 1)] = int(downsampled[-(index + 1)] * fade)
-    pad = [0] * int(8000 * 0.15)
-    return pad + downsampled + pad
 def test_tts():
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     client = ElevenLabs(api_key=api_key)
@@ -42,11 +27,7 @@ def test_tts():
     # Save locally to verify
     local_file = Path("/tmp/test_eleven.wav")
     playback_samples = build_freewili_samples(audio_bytes)
-    with wave.open(str(local_file), "wb") as f:
-        f.setnchannels(1)
-        f.setsampwidth(2)
-        f.setframerate(8000)
-        f.writeframes(struct.pack(f"{len(playback_samples)}h", *playback_samples))
+    write_mono_wav(local_file, playback_samples)
     
     fsize = os.path.getsize(local_file)
     print(f"Saved to {local_file} ({fsize} bytes)")

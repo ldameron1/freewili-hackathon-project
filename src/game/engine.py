@@ -24,6 +24,7 @@ class MafiaEngine:
         self.agents: dict[str, AIAgent] = {}
         
     def setup_game(self, players: list[Player]):
+        """Reset engine state and construct AI agents for the new roster."""
         self.state.players = players
         self.state.phase = GamePhase.LOBBY
         self.state.turn = 0
@@ -127,7 +128,7 @@ class MafiaEngine:
             time.sleep(0.5)
 
     def _get_human_speech(self, p: Player, prompt_msg: str) -> str:
-        """Handle PTT logic, with a fallback for SIMULATED human mode."""
+        """Capture a single push-to-talk turn and return the transcript text."""
         # --- SIMULATION FALLBACK ---
         # If we have a proof file locally, we can skip the hardware loop to test transcription
         if os.path.exists("final_captured_proof.wav"):
@@ -136,54 +137,7 @@ class MafiaEngine:
             return self.transcriber.transcribe("final_captured_proof.wav")
 
         display.render_main_display(self.fw, self.state, f"HOLD [GREEN]: {prompt_msg}", active_player=p)
-        
-        # Wait for Press
-        while True:
-            btns = self.fw.read_all_buttons().expect("Buttons fail")
-            if btns.get(ButtonColor.Green, False):
-                break
-            time.sleep(0.05)
-            
-        # Start Recording
-        for i in range(7):
-            self.fw.set_board_leds(i, 20, 20, 20)
-
-        captured_audio: list[list[int]] = []
-
-        def event_handler(event_type, _frame, data):
-            if event_type == EventType.Audio and isinstance(data, AudioData):
-                captured_audio.append(data.data)
-
-        self.fw.set_event_callback(event_handler)
-        try:
-            self.fw.enable_audio_events(True).expect("Audio events fail")
-        except Exception as e:
-            print(f"[Speech Error] enable_audio_events: {e}")
-            display.clear_leds(self.fw)
-            self.fw.set_event_callback(None)
-            return "[Mic Error]"
-
-        print("[Speech] Recording from DISPLAY audio events...")
-        
-        # Wait for Release OR 5 seconds
-        start_rec = time.time()
-        while time.time() - start_rec < 5.0:
-            try:
-                self.fw.process_events()
-            except Exception as e:
-                print(f"[Speech Error] process_events: {e}")
-            btns = self.fw.read_all_buttons().expect("Buttons fail")
-            if not btns.get(ButtonColor.Green, False):
-                break
-            if time.time() - start_rec < 0.35:
-                captured_audio.clear()
-            time.sleep(0.02)
-
-        try:
-            self.fw.enable_audio_events(False).expect("Disable audio events fail")
-        except Exception:
-            pass
-        self.fw.set_event_callback(None)
+        captured_audio = self._capture_push_to_talk_audio()
 
         display.clear_leds(self.fw)
         print("[Speech] Finalizing...")
@@ -199,13 +153,7 @@ class MafiaEngine:
             return "[Recording failed or silent]"
 
         try:
-            with wave.open(local_wav, "wb") as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(8000)
-                for chunk in captured_audio:
-                    audio_bytes = b"".join(struct.pack("<h", sample) for sample in chunk)
-                    wav_file.writeframes(audio_bytes)
+            self._write_captured_wav(local_wav, captured_audio)
         except Exception as e:
             print(f"[Speech Error] writing wav: {e}")
             return "[Recording failed or silent]"
@@ -217,6 +165,63 @@ class MafiaEngine:
         if not transcript or transcript == "[Error transcribing]":
             return "[Transcription error]"
         return transcript
+
+    def _capture_push_to_talk_audio(self, max_duration_sec: float = 5.0) -> list[list[int]]:
+        """Stream raw mic samples while GREEN is held on the device."""
+        while True:
+            btns = self.fw.read_all_buttons().expect("Buttons fail")
+            if btns.get(ButtonColor.Green, False):
+                break
+            time.sleep(0.05)
+
+        for i in range(7):
+            self.fw.set_board_leds(i, 20, 20, 20)
+
+        captured_audio: list[list[int]] = []
+
+        def event_handler(event_type, _frame, data):
+            if event_type == EventType.Audio and isinstance(data, AudioData):
+                captured_audio.append(data.data)
+
+        self.fw.set_event_callback(event_handler)
+        try:
+            self.fw.enable_audio_events(True).expect("Audio events fail")
+        except Exception as exc:
+            print(f"[Speech Error] enable_audio_events: {exc}")
+            self.fw.set_event_callback(None)
+            return []
+
+        print("[Speech] Recording from DISPLAY audio events...")
+        start_rec = time.time()
+        while time.time() - start_rec < max_duration_sec:
+            try:
+                self.fw.process_events()
+            except Exception as exc:
+                print(f"[Speech Error] process_events: {exc}")
+            btns = self.fw.read_all_buttons().expect("Buttons fail")
+            if not btns.get(ButtonColor.Green, False):
+                break
+            if time.time() - start_rec < 0.35:
+                captured_audio.clear()
+            time.sleep(0.02)
+
+        try:
+            self.fw.enable_audio_events(False).expect("Disable audio events fail")
+        except Exception:
+            pass
+        self.fw.set_event_callback(None)
+        return captured_audio
+
+    @staticmethod
+    def _write_captured_wav(local_wav: str, captured_audio: list[list[int]]) -> None:
+        """Persist captured audio-event chunks to a mono 8 kHz WAV."""
+        with wave.open(local_wav, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(8000)
+            for chunk in captured_audio:
+                audio_bytes = b"".join(struct.pack("<h", sample) for sample in chunk)
+                wav_file.writeframes(audio_bytes)
 
     def run_night_phase(self):
         self.state.phase = GamePhase.NIGHT
@@ -334,6 +339,7 @@ class MafiaEngine:
             self.announcer.announce_no_death()
 
     def run_day_discussion(self, rounds: int = 5):
+        """Run the daytime discussion rounds before the separate voting phase."""
         context = f"Day {self.state.turn} begins. Players alive: {', '.join(p.name for p in self.state.living_players())}"
         
         # Reset turns for the day
@@ -383,10 +389,6 @@ class MafiaEngine:
                 time.sleep(1)
                 display.clear_leds(self.fw)
                 
-        # Discussion ends
-        self.resolve_votes()
-        if not self.state.winner:
-            self.run_night_phase()
         # Run visual countdown to indicate discussion ending
         self.announcer.speak("Time is running out. Ten seconds remain.")
         display.run_led_countdown(self.fw, 10)

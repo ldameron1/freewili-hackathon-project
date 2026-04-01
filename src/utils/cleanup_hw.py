@@ -1,26 +1,13 @@
 import argparse
-import os
 from pathlib import Path
 
 from freewili import FreeWili
 from freewili.types import FileType, FreeWiliProcessorType
 
+from src.game.audio import CANONICAL_SFX_DIR
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ASSET_DIR = PROJECT_ROOT / "src" / "assets" / "sfx"
-
-CANONICAL_SOUND_FILES = {
-    "gunshot.wav",
-    "morning_bell.wav",
-    "night_bell.wav",
-    "narrator_day_1.wav",
-    "narrator_game_start.wav",
-    "narrator_mafia_win.wav",
-    "narrator_miracle.wav",
-    "narrator_night_1.wav",
-    "narrator_town_win.wav",
-    "narrator_vote_start.wav",
-}
+CANONICAL_SOUND_FILES = sorted(path.name for path in CANONICAL_SFX_DIR.glob("*.wav"))
 
 TEMP_AUDIO_FILES = {
     "tone.wav",
@@ -63,8 +50,8 @@ def purge_temp_audio(fw: FreeWili) -> None:
 
 def refresh_assets(fw: FreeWili) -> None:
     log("Refreshing canonical SFX assets into /sounds")
-    for filename in sorted(CANONICAL_SOUND_FILES):
-        local_path = ASSET_DIR / filename
+    for filename in CANONICAL_SOUND_FILES:
+        local_path = CANONICAL_SFX_DIR / filename
         if not local_path.exists():
             log(f"  skipping missing local asset {local_path}")
             continue
