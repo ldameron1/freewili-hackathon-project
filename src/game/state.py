@@ -130,6 +130,16 @@ class GameState:
         self.game_log.append(entry)
         print(f"[LOG/{self.phase.value.upper()}] {message}")
 
+    def public_day_human_transcript(self) -> str:
+        """Only public daytime human dialogue is shared with AI players."""
+        return "\n".join(
+            entry.message
+            for entry in self.game_log
+            if entry.public
+            and entry.phase == GamePhase.DAY_DISCUSSION.value
+            and " (Human): " in entry.message
+        )
+
     def check_win_condition(self) -> Optional[str]:
         living = self.living_players()
         mafia = [p for p in living if p.role == Role.MAFIA]

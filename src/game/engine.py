@@ -12,6 +12,7 @@ from .agents import AIAgent
 from .announcer import GameAnnouncer
 from . import display
 from .speech import SpeechTranscriber
+from .dialogue import run_mafia_dialogue
 
 
 
@@ -127,8 +128,8 @@ class MafiaEngine:
                     self.state.log(f"{p.name} (Human): {stmt}")
             time.sleep(0.5)
 
-    def _get_human_speech(self, p: Player, prompt_msg: str) -> str:
-        """Capture a single push-to-talk turn and return the transcript text."""
+    def _get_human_speech(self, p: Player, prompt_msg: str, *, allow_skip: bool = False) -> str | None:
+        """Capture a push-to-talk turn; RED cancels when allow_skip is enabled."""
         # --- SIMULATION FALLBACK ---
         # If we have a proof file locally, we can skip the hardware loop to test transcription
         if os.path.exists("final_captured_proof.wav"):
@@ -137,9 +138,11 @@ class MafiaEngine:
             return self.transcriber.transcribe("final_captured_proof.wav")
 
         display.render_main_display(self.fw, self.state, f"HOLD [GREEN]: {prompt_msg}", active_player=p)
-        captured_audio = self._capture_push_to_talk_audio()
+        captured_audio = self._capture_push_to_talk_audio(allow_skip=allow_skip)
 
         display.clear_leds(self.fw)
+        if captured_audio is None:
+            return None
         print("[Speech] Finalizing...")
         time.sleep(0.2)
         
@@ -166,10 +169,14 @@ class MafiaEngine:
             return "[Transcription error]"
         return transcript
 
-    def _capture_push_to_talk_audio(self, max_duration_sec: float = 5.0) -> list[list[int]]:
-        """Stream raw mic samples while GREEN is held on the device."""
+    def _capture_push_to_talk_audio(
+        self, max_duration_sec: float = 5.0, *, allow_skip: bool = False
+    ) -> list[list[int]] | None:
+        """Capture GREEN-held audio, or return None for RED when permitted."""
         while True:
             btns = self.fw.read_all_buttons().expect("Buttons fail")
+            if allow_skip and btns.get(ButtonColor.Red, False):
+                return None
             if btns.get(ButtonColor.Green, False):
                 break
             time.sleep(0.05)
@@ -240,24 +247,32 @@ class MafiaEngine:
         self.announcer.speak("Mafia, wake up. Conspire with your partners.")
         time.sleep(1)
         
-        # Human Mafia Turn
+        # Human Mafia: a bounded private conversation, ending early on RED.
         for p in self.state.mafia_players():
-            if not p.is_ai:
-                display.set_role_leds(self.fw, p.role)
-                stmt = self._get_human_speech(p, "Conspire with partner")
-                if stmt:
-                    self.state.log(f"{p.name} (Mafia/Human): {stmt}")
-                    # AI Mafia reaction
-                    mafia_partners = [x for x in self.state.mafia_players() if x.is_ai]
-                    for partner in mafia_partners:
-                        display.render_main_display(self.fw, self.state, "Thinking...", active_player=partner)
-                        res = self.agents[partner.name].react_to_event(f"Partner {p.name} said: {stmt}")
-                        reply = res.get("public_statement", "")
-                        if reply:
-                            self.state.log(f"{partner.name} (Mafia/AI): {reply}")
-                            display.render_main_display(self.fw, self.state, f"'{reply}'", active_player=partner)
-                            self.announcer.speak(reply, partner.voice_id)
-                display.clear_leds(self.fw)
+            if p.is_ai:
+                continue
+            display.set_role_leds(self.fw, p.role)
+
+            def capture_turn(turn_index: int, max_turns: int) -> str | None:
+                return self._get_human_speech(
+                    p,
+                    f"Conspire ({turn_index}/{max_turns}); RED to end",
+                    allow_skip=True,
+                )
+
+            def respond_to_partner(stmt: str) -> None:
+                self.state.log(f"{p.name} (Mafia/Human): {stmt}", public=False)
+                for partner in [x for x in self.state.mafia_players() if x.is_ai]:
+                    display.render_main_display(self.fw, self.state, "Thinking...", active_player=partner)
+                    res = self.agents[partner.name].react_to_event(f"Partner {p.name} said: {stmt}")
+                    reply = res.get("public_statement", "")
+                    if reply:
+                        self.state.log(f"{partner.name} (Mafia/AI): {reply}", public=False)
+                        display.render_main_display(self.fw, self.state, f"'{reply}'", active_player=partner)
+                        self.announcer.speak(reply, partner.voice_id)
+
+            run_mafia_dialogue(capture_turn, respond_to_partner, max_turns=3)
+            display.clear_leds(self.fw)
 
         for p in self.state.mafia_players():
             if not p.is_ai: continue
@@ -374,7 +389,7 @@ class MafiaEngine:
                 agent = self.agents[p.name]
                 
                 # Collect human transcripts for AI context
-                human_transcript = "\n".join([f"{e.message}" for e in self.state.game_log if "Human" in e.message])
+                human_transcript = self.state.public_day_human_transcript()
                 result = agent.day_discussion(context, transcript=human_transcript)
                 
                 self.state.log(f"[{p.name}/Thought] {result.get('private_thought')}", public=False)
